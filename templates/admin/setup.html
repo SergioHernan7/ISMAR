@@ -1,0 +1,37 @@
+{% extends 'admin/base.html' %}
+{% block titulo %}Crear administrador{% endblock %}
+{% block publico %}
+<div class="acceso">
+  <div class="card shadow-sm">
+    <div class="card-body p-4">
+      <h1 class="h4 mb-1">Bienvenido a ISMAR</h1>
+      <p class="text-muted mb-4">Todavía no hay administradores. Crea el primero para entrar al panel.</p>
+      {% include 'admin/_mensajes.html' %}
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="mb-3">
+          <label class="form-label">Nombre</label>
+          <input name="nombre" class="form-control" value="{{ request.form.nombre }}" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Usuario</label>
+          <input name="usuario" class="form-control" value="{{ request.form.usuario }}" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Correo</label>
+          <input name="email" type="email" class="form-control" value="{{ request.form.email }}" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Contraseña <span class="text-muted small">(mínimo 8 caracteres)</span></label>
+          <input name="password" type="password" class="form-control" minlength="8" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Repite la contraseña</label>
+          <input name="password2" type="password" class="form-control" minlength="8" required>
+        </div>
+        <button class="btn btn-dark w-100">Crear administrador</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

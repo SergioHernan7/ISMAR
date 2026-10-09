@@ -1,0 +1,181 @@
+{% extends 'admin/base.html' %}
+{% block titulo %}{{ 'Editar' if editando else 'Nuevo' }} producto{% endblock %}
+{% block contenido %}
+{% set p = producto or {} %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div>
+    <a href="{{ url_for('admin_productos') }}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Productos</a>
+    <h1 class="h3 mb-0">{{ 'Editar producto' if editando else 'Nuevo producto' }}</h1>
+  </div>
+</div>
+
+<form method="post" enctype="multipart/form-data" id="form-producto">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="row g-4">
+    <div class="col-lg-8">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6 text-muted text-uppercase mb-3">Información básica</h2>
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">Nombre *</label>
+              <input name="nombre" class="form-control" value="{{ p.nombre or '' }}" required maxlength="150">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">SKU / código *</label>
+              <input name="sku" class="form-control" value="{{ p.sku or '' }}" required maxlength="50">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Descripción corta <span class="text-muted small">(sale en el catálogo)</span></label>
+              <input name="descripcion_corta" class="form-control" value="{{ p.descripcion_corta or '' }}" maxlength="255">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Descripción completa</label>
+              <textarea name="descripcion" class="form-control" rows="5">{{ p.descripcion or '' }}</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6 text-muted text-uppercase mb-3">Especificaciones técnicas</h2>
+          <div id="specs">
+            {% for e in especificaciones %}
+            <div class="row g-2 mb-2 spec">
+              <div class="col-5"><input name="spec_nombre" class="form-control" value="{{ e.nombre }}" placeholder="Ej: Voltaje"></div>
+              <div class="col-5"><input name="spec_valor" class="form-control" value="{{ e.valor }}" placeholder="Ej: 110V"></div>
+              <div class="col-2"><button type="button" class="btn btn-outline-danger w-100 quitar-spec"><i class="bi bi-x-lg"></i></button></div>
+            </div>
+            {% endfor %}
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="agregar-spec"><i class="bi bi-plus-lg"></i> Añadir especificación</button>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6 text-muted text-uppercase mb-3">Imágenes</h2>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Imagen principal</label>
+              {% if p.imagen_principal %}
+                <div class="mb-2"><img src="{{ url_for('static', filename=p.imagen_principal) }}" class="galeria-principal rounded" style="max-width:160px" alt=""></div>
+              {% endif %}
+              <input type="file" name="imagen_principal" class="form-control" accept="image/*">
+              {% if p.imagen_principal %}<div class="form-text">Sube otra para reemplazarla.</div>{% endif %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Añadir a la galería</label>
+              <input type="file" name="galeria" class="form-control" accept="image/*" multiple>
+              <div class="form-text">Puedes elegir varias a la vez.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6 text-muted text-uppercase mb-3">Organización</h2>
+          <div class="mb-3">
+            <label class="form-label">Categoría *</label>
+            <select name="categoria_id" class="form-select" required>
+              <option value="">Elige una…</option>
+              {% for c in categorias %}
+              <option value="{{ c.id }}" {{ 'selected' if c.id|string == p.categoria_id|string }}>{{ c.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Marca</label>
+            <select name="marca_id" class="form-select">
+              <option value="">Sin marca</option>
+              {% for m in marcas %}
+              <option value="{{ m.id }}" {{ 'selected' if m.id|string == p.marca_id|string }}>{{ m.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="activo" id="activo" {{ 'checked' if (p.activo if producto else true) }}>
+            <label class="form-check-label" for="activo">Visible en la tienda</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="destacado" id="destacado" {{ 'checked' if p.destacado }}>
+            <label class="form-check-label" for="destacado">Destacado en la página de inicio</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6 text-muted text-uppercase mb-3">Precio e inventario</h2>
+          <div class="mb-3">
+            <label class="form-label">Precio *</label>
+            <div class="input-group"><span class="input-group-text">$</span>
+              <input name="precio" type="number" min="0" step="any" class="form-control" value="{{ p.precio if p.precio is not none else '' }}" required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Precio de oferta</label>
+            <div class="input-group"><span class="input-group-text">$</span>
+              <input name="precio_oferta" type="number" min="0" step="any" class="form-control" value="{{ p.precio_oferta if p.precio_oferta is not none else '' }}">
+            </div>
+            <div class="form-text">Déjalo vacío si no está en oferta.</div>
+          </div>
+          <div>
+            <label class="form-label">Stock (unidades)</label>
+            <input name="stock" type="number" min="0" step="1" class="form-control" value="{{ p.stock if p.stock is not none else 0 }}">
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-dark w-100 btn-lg"><i class="bi bi-check-lg"></i> Guardar producto</button>
+    </div>
+  </div>
+</form>
+
+{% if imagenes %}
+<div class="card border-0 shadow-sm mt-4">
+  <div class="card-body">
+    <h2 class="h6 text-muted text-uppercase mb-3">Galería actual</h2>
+    <div class="d-flex flex-wrap gap-3 galeria">
+      {% for img in imagenes %}
+      <div class="position-relative">
+        <img src="{{ url_for('static', filename=img.url) }}" alt="">
+        <form method="post" action="{{ url_for('admin_producto_imagen_eliminar', img_id=img.id) }}"
+              class="position-absolute top-0 end-0 m-1" onsubmit="return confirm('¿Quitar esta imagen?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-sm btn-danger py-0 px-1"><i class="bi bi-x-lg"></i></button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<template id="plantilla-spec">
+  <div class="row g-2 mb-2 spec">
+    <div class="col-5"><input name="spec_nombre" class="form-control" placeholder="Ej: Voltaje"></div>
+    <div class="col-5"><input name="spec_valor" class="form-control" placeholder="Ej: 110V"></div>
+    <div class="col-2"><button type="button" class="btn btn-outline-danger w-100 quitar-spec"><i class="bi bi-x-lg"></i></button></div>
+  </div>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const specs = document.getElementById('specs');
+  function agregarSpec() {
+    specs.appendChild(document.getElementById('plantilla-spec').content.cloneNode(true));
+  }
+  document.getElementById('agregar-spec').addEventListener('click', agregarSpec);
+  specs.addEventListener('click', e => {
+    const boton = e.target.closest('.quitar-spec');
+    if (boton) boton.closest('.spec').remove();
+  });
+  if (!specs.children.length) agregarSpec();
+</script>
+{% endblock %}

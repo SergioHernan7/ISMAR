@@ -1,0 +1,41 @@
+{% extends 'admin/base.html' %}
+{% block titulo %}Marcas{% endblock %}
+{% block contenido %}
+<h1 class="h3 mb-3">Marcas</h1>
+
+<form method="post" class="row g-2 mb-3" style="max-width: 520px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="col"><input name="nombre" class="form-control" placeholder="Nombre de la nueva marca" required maxlength="100"></div>
+  <div class="col-auto"><button class="btn btn-dark"><i class="bi bi-plus-lg"></i> Añadir</button></div>
+</form>
+
+<div class="tabla-card table-responsive" style="max-width: 720px">
+  <table class="table align-middle">
+    <thead><tr><th>Nombre</th><th>Productos</th><th class="text-end">Acciones</th></tr></thead>
+    <tbody>
+    {% for m in marcas %}
+      <tr>
+        <td>
+          <form method="post" class="d-flex gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="id" value="{{ m.id }}">
+            <input name="nombre" class="form-control form-control-sm" value="{{ m.nombre }}" required maxlength="100">
+            <button class="btn btn-sm btn-outline-primary" title="Guardar nombre"><i class="bi bi-check-lg"></i></button>
+          </form>
+        </td>
+        <td>{{ m.num_productos }}</td>
+        <td class="text-end">
+          <form method="post" action="{{ url_for('admin_marca_eliminar', id=m.id) }}" class="d-inline"
+                onsubmit="return confirm('¿Eliminar la marca «{{ m.nombre }}»? Sus productos quedarán sin marca.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3" class="text-center text-muted py-5">No hay marcas.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,6 @@
+{% for categoria, mensaje in get_flashed_messages(with_categories=true) %}
+<div class="alert alert-{{ categoria }} alert-dismissible fade show" role="alert">
+  {{ mensaje }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}

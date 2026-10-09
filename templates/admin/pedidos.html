@@ -1,0 +1,36 @@
+{% extends 'admin/base.html' %}
+{% block titulo %}Pedidos{% endblock %}
+{% block contenido %}
+<h1 class="h3 mb-3">Pedidos</h1>
+
+<ul class="nav nav-pills mb-3 flex-wrap">
+  <li class="nav-item"><a class="nav-link {{ 'active' if not estado }}" href="{{ url_for('admin_pedidos') }}">Todos</a></li>
+  {% for e in ESTADOS_PEDIDO %}
+  <li class="nav-item">
+    <a class="nav-link {{ 'active' if estado == e }}" href="{{ url_for('admin_pedidos', estado=e) }}">
+      {{ e|capitalize }} <span class="badge text-bg-light">{{ conteo.get(e, 0) }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="tabla-card table-responsive">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Código</th><th>Fecha</th><th>Cliente</th><th>Teléfono</th><th>Total</th><th>Estado</th></tr></thead>
+    <tbody>
+    {% for p in pedidos %}
+      <tr onclick="location='{{ url_for('admin_pedido', id=p.id) }}'" role="button">
+        <td class="fw-semibold">{{ p.codigo }}</td>
+        <td class="text-nowrap">{{ p.creado_en.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ p.cliente_nombre }}</td>
+        <td>{{ p.cliente_telefono }}</td>
+        <td>{{ p.total|dinero }}</td>
+        <td><span class="badge badge-estado-{{ p.estado }}">{{ p.estado|capitalize }}</span></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="text-center text-muted py-5">No hay pedidos{{ ' en este estado' if estado }}.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

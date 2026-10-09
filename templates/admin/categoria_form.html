@@ -1,0 +1,53 @@
+{% extends 'admin/base.html' %}
+{% block titulo %}{{ 'Editar' if editando else 'Nueva' }} categoría{% endblock %}
+{% block contenido %}
+{% set c = categoria or {} %}
+<a href="{{ url_for('admin_categorias') }}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Categorías</a>
+<h1 class="h3 mb-3">{{ 'Editar categoría' if editando else 'Nueva categoría' }}</h1>
+
+<div class="card border-0 shadow-sm" style="max-width: 640px">
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="mb-3">
+        <label class="form-label">Nombre *</label>
+        <input name="nombre" class="form-control" value="{{ c.nombre or '' }}" required maxlength="100">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Pertenece a</label>
+        <select name="categoria_padre_id" class="form-select">
+          <option value="">— Es una categoría principal —</option>
+          {% for padre in padres %}
+          <option value="{{ padre.id }}" {{ 'selected' if padre.id|string == c.categoria_padre_id|string }}>{{ padre.nombre }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Elige una si es una subcategoría (ej: Bombillos LED dentro de Iluminación).</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Descripción</label>
+        <textarea name="descripcion" class="form-control" rows="3">{{ c.descripcion or '' }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Imagen</label>
+        {% if c.imagen %}
+          <div class="mb-2"><img src="{{ url_for('static', filename=c.imagen) }}" class="rounded" style="max-width:140px" alt=""></div>
+        {% endif %}
+        <input type="file" name="imagen" class="form-control" accept="image/*">
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-4">
+          <label class="form-label">Orden</label>
+          <input name="orden" type="number" class="form-control" value="{{ c.orden if c.orden is not none else 0 }}">
+        </div>
+        <div class="col-8 d-flex align-items-end">
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" name="activa" id="activa" {{ 'checked' if (c.activa if categoria else true) }}>
+            <label class="form-check-label" for="activa">Visible en la tienda</label>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-dark"><i class="bi bi-check-lg"></i> Guardar</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

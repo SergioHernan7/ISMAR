@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Imágenes subidas desde el panel
+static/uploads/*/*
+!static/uploads/*/.gitkeep

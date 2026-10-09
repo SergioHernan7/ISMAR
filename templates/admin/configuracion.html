@@ -1,0 +1,21 @@
+{% extends 'admin/base.html' %}
+{% block titulo %}Configuración{% endblock %}
+{% block contenido %}
+<h1 class="h3 mb-3">Configuración de la tienda</h1>
+
+<div class="card border-0 shadow-sm" style="max-width: 640px">
+  <div class="card-body">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% for a in ajustes %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold" for="{{ a.clave }}">{{ a.clave.replace('_', ' ')|capitalize }}</label>
+        <input id="{{ a.clave }}" name="{{ a.clave }}" class="form-control" value="{{ a.valor }}" maxlength="255">
+        {% if a.descripcion %}<div class="form-text">{{ a.descripcion }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      <button class="btn btn-dark"><i class="bi bi-check-lg"></i> Guardar cambios</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
