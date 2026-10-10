@@ -127,6 +127,12 @@ def login_requerido(vista):
     def envoltura(*args, **kwargs):
         if 'admin_id' not in session:
             return redirect(url_for('admin_login', next=request.path))
+        # Si otro admin lo desactivó o lo borró, pierde el acceso aunque tenga la sesión abierta
+        if not consultar('SELECT id FROM administradores WHERE id = %s AND activo = 1',
+                         (session['admin_id'],), uno=True):
+            session.clear()
+            flash('Tu cuenta de administrador está desactivada.', 'danger')
+            return redirect(url_for('admin_login'))
         return vista(*args, **kwargs)
     return envoltura
 
@@ -572,6 +578,96 @@ def admin_configuracion():
         return redirect(url_for('admin_configuracion'))
     ajustes = consultar('SELECT * FROM configuracion ORDER BY clave')
     return render_template('admin/configuracion.html', ajustes=ajustes)
+
+
+# =====================================================
+#  Administradores
+# =====================================================
+
+@app.route('/admin/administradores')
+@login_requerido
+def admin_administradores():
+    administradores = consultar('SELECT * FROM administradores ORDER BY activo DESC, nombre')
+    return render_template('admin/administradores.html', administradores=administradores)
+
+
+@app.route('/admin/administradores/nuevo', methods=['GET', 'POST'])
+@app.route('/admin/administradores/<int:id>/editar', methods=['GET', 'POST'])
+@login_requerido
+def admin_administrador_form(id=None):
+    admin = None
+    if id:
+        admin = consultar('SELECT * FROM administradores WHERE id = %s', (id,), uno=True)
+        if not admin:
+            abort(404)
+    es_yo = id == session['admin_id']
+
+    if request.method == 'POST':
+        f = request.form
+        nombre = f.get('nombre', '').strip()
+        usuario = f.get('usuario', '').strip()
+        email = f.get('email', '').strip()
+        password = f.get('password', '')
+        # Uno mismo no se puede desactivar: así siempre queda al menos un admin activo
+        activo = 1 if f.get('activo') or es_yo else 0
+
+        error = None
+        if not all([nombre, usuario, email]):
+            error = 'El nombre, el usuario y el correo son obligatorios.'
+        elif not id and not password:
+            error = 'Escribe una contraseña para el nuevo administrador.'
+        elif password and len(password) < 8:
+            error = 'La contraseña debe tener al menos 8 caracteres.'
+        elif password and password != f.get('password2', ''):
+            error = 'Las contraseñas no coinciden.'
+        elif es_yo and password and not check_password_hash(admin['password_hash'], f.get('password_actual', '')):
+            error = 'Tu contraseña actual no es correcta.'
+        if error:
+            flash(error, 'danger')
+            return render_template('admin/administrador_form.html', admin=f, editando=id, es_yo=es_yo)
+
+        datos = {'nombre': nombre, 'usuario': usuario, 'email': email, 'activo': activo}
+        if password:
+            datos['password_hash'] = generate_password_hash(password)
+        columnas = list(datos)
+        try:
+            if id:
+                ejecutar(f'UPDATE administradores SET {", ".join(c + " = %s" for c in columnas)} WHERE id = %s',
+                         [datos[c] for c in columnas] + [id])
+            else:
+                ejecutar(f'INSERT INTO administradores ({", ".join(columnas)}) '
+                         f'VALUES ({", ".join(["%s"] * len(columnas))})', [datos[c] for c in columnas])
+        except mysql.connector.IntegrityError:
+            flash('Ya existe un administrador con ese usuario o correo.', 'danger')
+            return render_template('admin/administrador_form.html', admin=f, editando=id, es_yo=es_yo)
+
+        if es_yo:
+            session['admin_nombre'] = nombre
+        flash('Administrador guardado.', 'success')
+        return redirect(url_for('admin_administradores'))
+
+    return render_template('admin/administrador_form.html', admin=admin, editando=id, es_yo=es_yo)
+
+
+@app.route('/admin/administradores/<int:id>/activo', methods=['POST'])
+@login_requerido
+def admin_administrador_activo(id):
+    if id == session['admin_id']:
+        flash('No puedes desactivar tu propia cuenta.', 'warning')
+    else:
+        ejecutar('UPDATE administradores SET activo = 1 - activo WHERE id = %s', (id,))
+    return redirect(url_for('admin_administradores'))
+
+
+@app.route('/admin/administradores/<int:id>/eliminar', methods=['POST'])
+@login_requerido
+def admin_administrador_eliminar(id):
+    if id == session['admin_id']:
+        flash('No puedes eliminar tu propia cuenta.', 'warning')
+    else:
+        ejecutar('DELETE FROM administradores WHERE id = %s', (id,))
+        flash('Administrador eliminado.', 'success')
+    return redirect(url_for('admin_administradores'))
 
 
 # =====================================================

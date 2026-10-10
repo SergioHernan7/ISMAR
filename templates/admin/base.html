@@ -25,9 +25,10 @@
         <li><a href="{{ url_for('admin_marcas') }}" class="nav-link text-white {{ 'active' if 'marca' in ep }}"><i class="bi bi-award"></i> Marcas</a></li>
         <li><a href="{{ url_for('admin_pedidos') }}" class="nav-link text-white {{ 'active' if 'pedido' in ep }}"><i class="bi bi-receipt"></i> Pedidos</a></li>
         <li><a href="{{ url_for('admin_configuracion') }}" class="nav-link text-white {{ 'active' if ep == 'admin_configuracion' }}"><i class="bi bi-gear"></i> Configuración</a></li>
+        <li><a href="{{ url_for('admin_administradores') }}" class="nav-link text-white {{ 'active' if 'administrador' in ep }}"><i class="bi bi-people"></i> Administradores</a></li>
       </ul>
       <hr>
-      <div class="small text-white-50 mb-2"><i class="bi bi-person-circle"></i> {{ session.admin_nombre }}</div>
+      <a href="{{ url_for('admin_administrador_form', id=session.admin_id) }}" class="d-block small text-white-50 text-decoration-none mb-2" title="Mi cuenta"><i class="bi bi-person-circle"></i> {{ session.admin_nombre }}</a>
       <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-light btn-sm"><i class="bi bi-box-arrow-right"></i> Cerrar sesión</a>
     </div>
   </nav>
