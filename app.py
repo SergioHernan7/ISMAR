@@ -707,15 +707,21 @@ def catalogo(slug=None):
     productos = consultar(SQL_PRODUCTOS_PUBLICOS + filtros + f' ORDER BY {orden_sql} LIMIT %s OFFSET %s',
                           params + [PRODUCTOS_POR_PAGINA, (pagina - 1) * PRODUCTOS_POR_PAGINA])
 
-    # Árbol de categorías para el filtro lateral
-    todas = consultar('SELECT id, nombre, slug, categoria_padre_id FROM categorias '
-                      'WHERE activa = 1 ORDER BY orden, nombre')
-    arbol = [dict(c, hijas=[h for h in todas if h['categoria_padre_id'] == c['id']])
-             for c in todas if c['categoria_padre_id'] is None]
-    marcas = consultar('SELECT id, nombre FROM marcas WHERE activa = 1 ORDER BY nombre')
+    # Título de la página según desde dónde se llegó (menú, buscador o marcas del inicio)
+    if categoria:
+        titulo = categoria['nombre']
+    elif q:
+        titulo = f'Resultados para "{q}"'
+    elif solo_ofertas:
+        titulo = 'Ofertas'
+    elif marca:
+        fila = consultar('SELECT nombre FROM marcas WHERE id = %s', (marca,), uno=True)
+        titulo = fila['nombre'] if fila else 'Catálogo'
+    else:
+        titulo = 'Catálogo'
 
-    return render_template('tienda/catalogo.html', productos=productos, categoria=categoria, arbol=arbol,
-                           marcas=marcas, q=q, marca=marca, solo_ofertas=solo_ofertas, orden=orden,
+    return render_template('tienda/catalogo.html', productos=productos, categoria=categoria, titulo=titulo,
+                           q=q, marca=marca, solo_ofertas=solo_ofertas, orden=orden,
                            pagina=pagina, paginas=paginas, total=total)
 
 

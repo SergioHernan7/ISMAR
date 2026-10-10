@@ -22,7 +22,7 @@ Es una tienda en línea de productos eléctricos para una cliente. Los clientes 
 
 - Esquema de la base de datos
 - Panel de administrador en `/admin`: crear el primer admin (`/admin/setup`), login/logout, dashboard, CRUD de productos (con imágenes, especificaciones y visibilidad), categorías, marcas, pedidos (ver y cambiar estado) y configuración de la tienda (por ejemplo, el número de WhatsApp)
-- Tienda pública: inicio (`/`), catálogo con búsqueda, filtros por categoría/marca/ofertas y orden (`/catalogo`, `/categoria/<slug>`), detalle de producto (`/producto/<slug>`), carrito en la sesión (`/carrito`) y envío del pedido: se guarda en `pedidos` con código `ISM-000123` y se abre WhatsApp con el mensaje armado (`/pedido/<codigo>/gracias`)
+- Tienda pública: inicio (`/`), catálogo con búsqueda y orden (sin panel de filtros: se llega por el menú de categorías, "Ofertas" o las marcas del inicio) (`/catalogo`, `/categoria/<slug>`), detalle de producto (`/producto/<slug>`), carrito en la sesión (`/carrito`) y envío del pedido: se guarda en `pedidos` con código `ISM-000123` y se abre WhatsApp con el mensaje armado (`/pedido/<codigo>/gracias`)
 - El stock no se descuenta al hacer el pedido; solo se valida que alcance
 
 ## Forma de trabajar

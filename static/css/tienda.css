@@ -128,16 +128,6 @@ a { color: var(--azul-2); }
 .precios-grandes .precio-anterior { font-size: 1.1rem; }
 
 /* ---------- Catálogo ---------- */
-.filtro-titulo { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--texto-suave); margin: 1.25rem 0 .5rem; }
-.filtro-titulo:first-child { margin-top: 0; }
-.lista-filtro a { display: block; padding: .25rem 0; color: var(--texto); text-decoration: none; }
-.lista-filtro a:hover { color: var(--azul-2); }
-.lista-filtro a.activo { font-weight: 700; color: var(--azul-2); }
-.lista-filtro a.activo::before { content: '› '; color: var(--acento-hover); }
-@media (min-width: 992px) {
-  .filtros { background: #fff; border: 1px solid var(--borde); border-radius: var(--radio); padding: 1.25rem; position: sticky; top: 130px; }
-  .filtros .offcanvas-header { display: none; }
-}
 .page-item.active .page-link { background: var(--azul); border-color: var(--azul); }
 .page-link { color: var(--azul); }
 
