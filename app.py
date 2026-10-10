@@ -5,6 +5,7 @@ import unicodedata
 import uuid
 from decimal import Decimal, InvalidOperation
 from functools import wraps
+from urllib.parse import quote
 
 import mysql.connector
 from flask import (Flask, abort, flash, redirect, render_template, request,
@@ -152,11 +153,6 @@ def hay_administradores():
 # =====================================================
 #  Acceso al panel
 # =====================================================
-
-@app.route('/')
-def inicio():
-    # La tienda pública aún no existe; por ahora se entra directo al panel.
-    return redirect(url_for('admin_dashboard'))
 
 
 @app.route('/admin/setup', methods=['GET', 'POST'])
@@ -576,6 +572,313 @@ def admin_configuracion():
         return redirect(url_for('admin_configuracion'))
     ajustes = consultar('SELECT * FROM configuracion ORDER BY clave')
     return render_template('admin/configuracion.html', ajustes=ajustes)
+
+
+# =====================================================
+#  Tienda pública: utilidades
+# =====================================================
+
+PRODUCTOS_POR_PAGINA = 12
+MAX_CANTIDAD = 999
+
+# Productos que el público puede ver: activos y de una categoría activa
+SQL_PRODUCTOS_PUBLICOS = '''
+    SELECT p.*, c.nombre AS categoria, c.slug AS categoria_slug, m.nombre AS marca,
+           COALESCE(p.precio_oferta, p.precio) AS precio_final
+    FROM productos p
+    JOIN categorias c ON c.id = p.categoria_id
+    LEFT JOIN categorias cp ON cp.id = c.categoria_padre_id
+    LEFT JOIN marcas m ON m.id = p.marca_id
+    WHERE p.activo = 1 AND c.activa = 1 AND COALESCE(cp.activa, 1) = 1'''
+
+
+def config_tienda():
+    return {f['clave']: f['valor'] for f in consultar('SELECT clave, valor FROM configuracion')}
+
+
+def enlace_whatsapp(numero, texto=''):
+    """Devuelve el enlace wa.me, o None si el número no está bien configurado."""
+    numero = re.sub(r'\D', '', numero or '')
+    if len(numero) < 10:
+        return None
+    return f'https://wa.me/{numero}' + (f'?text={quote(texto)}' if texto else '')
+
+
+def carrito_sesion():
+    """El carrito vive en la sesión como {'id_producto': cantidad}."""
+    return session.get('carrito', {})
+
+
+def guardar_carrito(carrito):
+    session['carrito'] = {k: v for k, v in carrito.items() if v > 0}
+
+
+def carrito_detallado():
+    """Junta el carrito de la sesión con los datos actuales de la base de datos."""
+    carrito = carrito_sesion()
+    if not carrito:
+        return [], Decimal(0)
+    ids = [int(i) for i in carrito]
+    productos = consultar(SQL_PRODUCTOS_PUBLICOS + f' AND p.id IN ({", ".join(["%s"] * len(ids))})', ids)
+    items, total = [], Decimal(0)
+    for p in productos:
+        cantidad = carrito[str(p['id'])]
+        subtotal = p['precio_final'] * cantidad
+        items.append({'producto': p, 'cantidad': cantidad, 'subtotal': subtotal})
+        total += subtotal
+    # Si un producto se ocultó o se borró desde el panel, sale del carrito
+    if len(items) != len(carrito):
+        guardar_carrito({str(i['producto']['id']): i['cantidad'] for i in items})
+    return items, total
+
+
+@app.context_processor
+def variables_tienda():
+    def categorias_menu():
+        return consultar('SELECT id, nombre, slug FROM categorias '
+                         'WHERE activa = 1 AND categoria_padre_id IS NULL ORDER BY orden, nombre')
+    if request.path.startswith('/admin'):
+        return {}
+    tienda = config_tienda()
+    return {
+        'tienda': tienda,
+        'whatsapp_contacto': enlace_whatsapp(tienda.get('whatsapp_numero')),
+        'carrito_cantidad': sum(carrito_sesion().values()),
+        'categorias_menu': categorias_menu,
+        'STOCK_BAJO': STOCK_BAJO,
+    }
+
+
+# =====================================================
+#  Tienda pública: páginas
+# =====================================================
+
+@app.route('/')
+def inicio():
+    categorias = consultar('SELECT * FROM categorias WHERE activa = 1 AND categoria_padre_id IS NULL '
+                           'ORDER BY orden, nombre')
+    destacados = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.destacado = 1 ORDER BY p.creado_en DESC LIMIT 8')
+    ofertas = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.precio_oferta IS NOT NULL '
+                        'ORDER BY p.creado_en DESC LIMIT 8')
+    marcas = consultar(f'''SELECT DISTINCT m.id, m.nombre, m.logo FROM marcas m
+                           JOIN ({SQL_PRODUCTOS_PUBLICOS}) p ON p.marca_id = m.id
+                           WHERE m.activa = 1 ORDER BY m.nombre''')
+    return render_template('tienda/inicio.html', categorias=categorias,
+                           destacados=destacados, ofertas=ofertas, marcas=marcas)
+
+
+@app.route('/catalogo')
+@app.route('/categoria/<slug>')
+def catalogo(slug=None):
+    categoria = None
+    if slug:
+        categoria = consultar('SELECT * FROM categorias WHERE slug = %s AND activa = 1', (slug,), uno=True)
+        if not categoria:
+            abort(404)
+    q = request.args.get('q', '').strip()
+    marca = request.args.get('marca', type=int)
+    solo_ofertas = request.args.get('ofertas') == '1'
+    orden = request.args.get('orden', '')
+    pagina = max(request.args.get('pagina', 1, type=int), 1)
+
+    filtros, params = '', []
+    if categoria:
+        filtros += ' AND (c.id = %s OR c.categoria_padre_id = %s)'
+        params += [categoria['id'], categoria['id']]
+    if q:
+        filtros += ' AND (p.nombre LIKE %s OR p.descripcion_corta LIKE %s OR p.sku LIKE %s OR m.nombre LIKE %s)'
+        params += [f'%{q}%'] * 4
+    if marca:
+        filtros += ' AND p.marca_id = %s'
+        params.append(marca)
+    if solo_ofertas:
+        filtros += ' AND p.precio_oferta IS NOT NULL'
+
+    ordenes = {
+        'precio_asc': 'precio_final ASC',
+        'precio_desc': 'precio_final DESC',
+        'nombre': 'p.nombre ASC',
+    }
+    orden_sql = ordenes.get(orden, 'p.destacado DESC, p.creado_en DESC')
+
+    total = consultar(f'SELECT COUNT(*) AS n FROM ({SQL_PRODUCTOS_PUBLICOS}{filtros}) t', params, uno=True)['n']
+    paginas = max((total + PRODUCTOS_POR_PAGINA - 1) // PRODUCTOS_POR_PAGINA, 1)
+    pagina = min(pagina, paginas)
+    productos = consultar(SQL_PRODUCTOS_PUBLICOS + filtros + f' ORDER BY {orden_sql} LIMIT %s OFFSET %s',
+                          params + [PRODUCTOS_POR_PAGINA, (pagina - 1) * PRODUCTOS_POR_PAGINA])
+
+    # Árbol de categorías para el filtro lateral
+    todas = consultar('SELECT id, nombre, slug, categoria_padre_id FROM categorias '
+                      'WHERE activa = 1 ORDER BY orden, nombre')
+    arbol = [dict(c, hijas=[h for h in todas if h['categoria_padre_id'] == c['id']])
+             for c in todas if c['categoria_padre_id'] is None]
+    marcas = consultar('SELECT id, nombre FROM marcas WHERE activa = 1 ORDER BY nombre')
+
+    return render_template('tienda/catalogo.html', productos=productos, categoria=categoria, arbol=arbol,
+                           marcas=marcas, q=q, marca=marca, solo_ofertas=solo_ofertas, orden=orden,
+                           pagina=pagina, paginas=paginas, total=total)
+
+
+@app.route('/producto/<slug>')
+def producto_detalle(slug):
+    producto = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.slug = %s', (slug,), uno=True)
+    if not producto:
+        abort(404)
+    imagenes = consultar('SELECT url FROM producto_imagenes WHERE producto_id = %s ORDER BY orden, id',
+                         (producto['id'],))
+    especificaciones = consultar('SELECT nombre, valor FROM producto_especificaciones '
+                                 'WHERE producto_id = %s ORDER BY orden, id', (producto['id'],))
+    relacionados = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.categoria_id = %s AND p.id <> %s '
+                             'ORDER BY RAND() LIMIT 4', (producto['categoria_id'], producto['id']))
+    return render_template('tienda/producto.html', producto=producto, imagenes=imagenes,
+                           especificaciones=especificaciones, relacionados=relacionados)
+
+
+# =====================================================
+#  Tienda pública: carrito y pedido
+# =====================================================
+
+@app.route('/carrito')
+def carrito():
+    items, total = carrito_detallado()
+    return render_template('tienda/carrito.html', items=items, total=total,
+                           datos=session.get('datos_cliente', {}))
+
+
+@app.route('/carrito/agregar', methods=['POST'])
+def carrito_agregar():
+    producto_id = request.form.get('producto_id', type=int)
+    cantidad = max(request.form.get('cantidad', 1, type=int), 1)
+    producto = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.id = %s', (producto_id,), uno=True)
+    if not producto:
+        abort(404)
+    carrito = carrito_sesion()
+    deseada = carrito.get(str(producto_id), 0) + cantidad
+    nueva = min(deseada, producto['stock'], MAX_CANTIDAD)
+    if nueva <= 0:
+        flash(f'"{producto["nombre"]}" está agotado.', 'warning')
+    else:
+        carrito[str(producto_id)] = nueva
+        guardar_carrito(carrito)
+        if nueva < deseada:
+            flash(f'Solo hay {producto["stock"]} unidades de "{producto["nombre"]}"; '
+                  f'tu carrito quedó con el máximo disponible.', 'warning')
+        else:
+            flash(f'"{producto["nombre"]}" se agregó al carrito.', 'success')
+    destino = request.form.get('volver', '')
+    return redirect(destino if destino.startswith('/') and not destino.startswith('//') else url_for('carrito'))
+
+
+@app.route('/carrito/actualizar', methods=['POST'])
+def carrito_actualizar():
+    carrito = carrito_sesion()
+    items, _ = carrito_detallado()
+    for item in items:
+        p = item['producto']
+        cantidad = request.form.get(f'cantidad_{p["id"]}', type=int)
+        if cantidad is None:
+            continue
+        if cantidad > p['stock']:
+            flash(f'Solo hay {p["stock"]} unidades de "{p["nombre"]}".', 'warning')
+        carrito[str(p['id'])] = max(min(cantidad, p['stock'], MAX_CANTIDAD), 0)
+    guardar_carrito(carrito)
+    return redirect(url_for('carrito'))
+
+
+@app.route('/carrito/quitar/<int:producto_id>', methods=['POST'])
+def carrito_quitar(producto_id):
+    carrito = carrito_sesion()
+    carrito.pop(str(producto_id), None)
+    guardar_carrito(carrito)
+    flash('Producto quitado del carrito.', 'success')
+    return redirect(url_for('carrito'))
+
+
+@app.route('/pedido/enviar', methods=['POST'])
+def pedido_enviar():
+    f = request.form
+    datos = {
+        'nombre': f.get('nombre', '').strip()[:120],
+        'telefono': f.get('telefono', '').strip()[:30],
+        'ciudad': f.get('ciudad', '').strip()[:100],
+        'direccion': f.get('direccion', '').strip()[:255],
+        'notas': f.get('notas', '').strip()[:1000],
+    }
+    session['datos_cliente'] = datos  # para no tener que escribirlos otra vez
+
+    items, total = carrito_detallado()
+    if not items:
+        flash('Tu carrito está vacío.', 'warning')
+        return redirect(url_for('carrito'))
+    if not datos['nombre'] or len(re.sub(r'\D', '', datos['telefono'])) < 7:
+        flash('Escribe tu nombre y un número de teléfono válido.', 'danger')
+        return redirect(url_for('carrito'))
+    agotados = [i['producto']['nombre'] for i in items if i['cantidad'] > i['producto']['stock']]
+    if agotados:
+        flash('Ya no hay suficientes unidades de: ' + ', '.join(agotados) + '. Ajusta las cantidades.', 'danger')
+        return redirect(url_for('carrito'))
+
+    con = get_connection()
+    try:
+        cur = con.cursor()
+        # El código se arma con el id, así que primero se guarda con uno temporal
+        cur.execute('INSERT INTO pedidos (codigo, cliente_nombre, cliente_telefono, cliente_direccion, '
+                    'cliente_ciudad, notas, total) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+                    (uuid.uuid4().hex[:20], datos['nombre'], datos['telefono'], datos['direccion'] or None,
+                     datos['ciudad'] or None, datos['notas'] or None, total))
+        pedido_id = cur.lastrowid
+        codigo = f'ISM-{pedido_id:06d}'
+        cur.execute('UPDATE pedidos SET codigo = %s WHERE id = %s', (codigo, pedido_id))
+        for i in items:
+            p = i['producto']
+            cur.execute('INSERT INTO pedido_detalle (pedido_id, producto_id, nombre_producto, '
+                        'precio_unitario, cantidad, subtotal) VALUES (%s, %s, %s, %s, %s, %s)',
+                        (pedido_id, p['id'], p['nombre'], p['precio_final'], i['cantidad'], i['subtotal']))
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+    session.pop('carrito', None)
+    session['ultimo_pedido'] = codigo
+    return redirect(url_for('pedido_gracias', codigo=codigo))
+
+
+@app.route('/pedido/<codigo>/gracias')
+def pedido_gracias(codigo):
+    # Solo quien hizo el pedido puede ver esta página
+    if session.get('ultimo_pedido') != codigo:
+        return redirect(url_for('inicio'))
+    pedido = consultar('SELECT * FROM pedidos WHERE codigo = %s', (codigo,), uno=True)
+    if not pedido:
+        abort(404)
+    detalle = consultar('SELECT * FROM pedido_detalle WHERE pedido_id = %s', (pedido['id'],))
+    tienda = config_tienda()
+
+    lineas = [tienda.get('mensaje_pedido', 'Hola, quiero finalizar mi pedido'), '',
+              f'*Pedido {pedido["codigo"]}*']
+    for d in detalle:
+        lineas.append(f'• {d["cantidad"]} x {d["nombre_producto"]} — {formato_dinero(d["subtotal"])}')
+    lineas += [f'*Total: {formato_dinero(pedido["total"])}*', '',
+               f'Nombre: {pedido["cliente_nombre"]}', f'Teléfono: {pedido["cliente_telefono"]}']
+    if pedido['cliente_ciudad']:
+        lineas.append(f'Ciudad: {pedido["cliente_ciudad"]}')
+    if pedido['cliente_direccion']:
+        lineas.append(f'Dirección: {pedido["cliente_direccion"]}')
+    if pedido['notas']:
+        lineas.append(f'Notas: {pedido["notas"]}')
+    whatsapp = enlace_whatsapp(tienda.get('whatsapp_numero'), '\n'.join(lineas))
+
+    return render_template('tienda/gracias.html', pedido=pedido, detalle=detalle, whatsapp=whatsapp)
+
+
+@app.errorhandler(404)
+def no_encontrado(e):
+    if request.path.startswith('/admin'):
+        return e
+    return render_template('tienda/404.html'), 404
 
 
 if __name__ == '__main__':

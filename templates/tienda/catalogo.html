@@ -1,0 +1,122 @@
+{% extends 'tienda/base.html' %}
+{% block titulo %}{{ categoria.nombre if categoria else ('Resultados para "' ~ q ~ '"' if q else 'Catálogo') }}{% endblock %}
+
+{# Arma la URL del catálogo conservando los filtros actuales y cambiando solo los indicados #}
+{% macro url_filtros(cambios={}) -%}
+  {%- set f = {'q': q or None, 'marca': marca, 'ofertas': 1 if solo_ofertas else None, 'orden': orden or None} -%}
+  {%- set _ = f.update(cambios) -%}
+  {%- set args = {} -%}
+  {%- for k, v in f.items() if v -%}{%- set _ = args.update({k: v}) -%}{%- endfor -%}
+  {%- set slug = cambios.get('slug', categoria.slug if categoria else None) -%}
+  {%- set _ = args.pop('slug', None) -%}
+  {{- url_for('catalogo', slug=slug, **args) if slug else url_for('catalogo', **args) -}}
+{%- endmacro %}
+
+{% block contenido %}
+<div class="container mt-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{{ url_for('inicio') }}">Inicio</a></li>
+      <li class="breadcrumb-item {{ 'active' if not categoria }}">{% if categoria %}<a href="{{ url_for('catalogo') }}">Catálogo</a>{% else %}Catálogo{% endif %}</li>
+      {% if categoria %}<li class="breadcrumb-item active">{{ categoria.nombre }}</li>{% endif %}
+    </ol>
+  </nav>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div>
+      <h1 class="h3 fw-bold mb-1">{{ categoria.nombre if categoria else ('Resultados para "' ~ q ~ '"' if q else 'Catálogo') }}</h1>
+      <div class="texto-suave small">{{ total }} producto{{ '' if total == 1 else 's' }}</div>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-outline-dark d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#filtros"><i class="bi bi-funnel"></i> Filtros</button>
+      <form method="get" action="{{ url_for('catalogo', slug=categoria.slug) if categoria else url_for('catalogo') }}">
+        {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+        {% if marca %}<input type="hidden" name="marca" value="{{ marca }}">{% endif %}
+        {% if solo_ofertas %}<input type="hidden" name="ofertas" value="1">{% endif %}
+        <select name="orden" class="form-select" onchange="this.form.submit()" aria-label="Ordenar">
+          <option value="">Relevancia</option>
+          <option value="precio_asc" {{ 'selected' if orden == 'precio_asc' }}>Menor precio</option>
+          <option value="precio_desc" {{ 'selected' if orden == 'precio_desc' }}>Mayor precio</option>
+          <option value="nombre" {{ 'selected' if orden == 'nombre' }}>Nombre (A-Z)</option>
+        </select>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <aside class="col-lg-3">
+      <div class="offcanvas-lg offcanvas-start filtros" id="filtros" tabindex="-1">
+        <div class="offcanvas-header">
+          <h2 class="h5 mb-0">Filtros</h2>
+          <button type="button" class="btn-close d-lg-none" data-bs-dismiss="offcanvas" data-bs-target="#filtros"></button>
+        </div>
+        <div class="offcanvas-body flex-column">
+          <h3 class="filtro-titulo">Categorías</h3>
+          <ul class="list-unstyled lista-filtro">
+            <li><a href="{{ url_filtros({'slug': None}) }}" class="{{ 'activo' if not categoria }}">Todas</a></li>
+            {% for c in arbol %}
+            <li>
+              <a href="{{ url_filtros({'slug': c.slug}) }}" class="{{ 'activo' if categoria and categoria.id == c.id }}">{{ c.nombre }}</a>
+              {% if c.hijas %}
+              <ul class="list-unstyled ps-3">
+                {% for h in c.hijas %}
+                <li><a href="{{ url_filtros({'slug': h.slug}) }}" class="{{ 'activo' if categoria and categoria.id == h.id }}">{{ h.nombre }}</a></li>
+                {% endfor %}
+              </ul>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+
+          {% if marcas %}
+          <h3 class="filtro-titulo">Marcas</h3>
+          <ul class="list-unstyled lista-filtro">
+            <li><a href="{{ url_filtros({'marca': None}) }}" class="{{ 'activo' if not marca }}">Todas</a></li>
+            {% for m in marcas %}
+            <li><a href="{{ url_filtros({'marca': m.id}) }}" class="{{ 'activo' if marca == m.id }}">{{ m.nombre }}</a></li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+
+          <h3 class="filtro-titulo">Precio</h3>
+          <a href="{{ url_filtros({'ofertas': None if solo_ofertas else 1}) }}" class="d-flex align-items-center gap-2 text-reset text-decoration-none">
+            <i class="bi bi-{{ 'check-square-fill text-primary' if solo_ofertas else 'square' }}"></i> Solo ofertas
+          </a>
+
+          {% if q or marca or solo_ofertas or categoria %}
+          <a href="{{ url_for('catalogo') }}" class="btn btn-outline-secondary btn-sm mt-4"><i class="bi bi-x-lg"></i> Quitar filtros</a>
+          {% endif %}
+        </div>
+      </div>
+    </aside>
+
+    <div class="col-lg-9">
+      {% if productos %}
+      <div class="row g-3">
+        {% for p in productos %}
+        <div class="col-6 col-md-4">{% include 'tienda/_producto_tarjeta.html' %}</div>
+        {% endfor %}
+      </div>
+
+      {% if paginas > 1 %}
+      <nav class="mt-4" aria-label="Páginas">
+        <ul class="pagination justify-content-center">
+          <li class="page-item {{ 'disabled' if pagina == 1 }}"><a class="page-link" href="{{ url_filtros({'pagina': pagina - 1}) }}" aria-label="Anterior">‹</a></li>
+          {% for n in range(1, paginas + 1) %}
+          <li class="page-item {{ 'active' if n == pagina }}"><a class="page-link" href="{{ url_filtros({'pagina': n}) }}">{{ n }}</a></li>
+          {% endfor %}
+          <li class="page-item {{ 'disabled' if pagina == paginas }}"><a class="page-link" href="{{ url_filtros({'pagina': pagina + 1}) }}" aria-label="Siguiente">›</a></li>
+        </ul>
+      </nav>
+      {% endif %}
+      {% else %}
+      <div class="vacio">
+        <i class="bi bi-search"></i>
+        <p class="mb-3">No encontramos productos con esos filtros.</p>
+        <a href="{{ url_for('catalogo') }}" class="btn btn-acento">Ver todo el catálogo</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

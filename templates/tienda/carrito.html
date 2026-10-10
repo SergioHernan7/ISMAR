@@ -1,0 +1,102 @@
+{% extends 'tienda/base.html' %}
+{% block titulo %}Tu carrito{% endblock %}
+{% block whatsapp_flotante %}{% endblock %}
+{% block contenido %}
+<div class="container mt-4">
+  <h1 class="h3 fw-bold mb-4"><i class="bi bi-cart3"></i> Tu carrito</h1>
+
+  {% if items %}
+  <div class="row g-4">
+    <div class="col-lg-7">
+      <form method="post" action="{{ url_for('carrito_actualizar') }}" id="form-carrito">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      </form>
+      <div class="caja">
+        {% for i in items %}
+        {% set p = i.producto %}
+        <div class="item-carrito">
+          <a href="{{ url_for('producto_detalle', slug=p.slug) }}" class="foto-item">
+            {% if p.imagen_principal %}
+            <img src="{{ url_for('static', filename=p.imagen_principal) }}" alt="">
+            {% else %}
+            <span class="sin-foto"><i class="bi bi-lightning-charge"></i></span>
+            {% endif %}
+          </a>
+          <div class="flex-grow-1 min-w-0">
+            <a href="{{ url_for('producto_detalle', slug=p.slug) }}" class="fw-semibold text-reset text-decoration-none d-block">{{ p.nombre }}</a>
+            <div class="small texto-suave">{{ p.precio_final|dinero }} c/u</div>
+            <div class="d-flex flex-wrap align-items-center gap-1 mt-2">
+              <div class="selector-cantidad selector-pequeno">
+                <button type="button" data-paso="-1" aria-label="Menos">−</button>
+                <input type="number" name="cantidad_{{ p.id }}" value="{{ i.cantidad }}" min="0" max="{{ p.stock }}"
+                       form="form-carrito" aria-label="Cantidad de {{ p.nombre }}" data-autoenviar>
+                <button type="button" data-paso="1" aria-label="Más">+</button>
+              </div>
+              <form method="post" action="{{ url_for('carrito_quitar', producto_id=p.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn btn-link btn-sm text-danger" aria-label="Quitar {{ p.nombre }}"><i class="bi bi-trash"></i> Quitar</button>
+              </form>
+            </div>
+          </div>
+          <div class="fw-bold text-nowrap">{{ i.subtotal|dinero }}</div>
+        </div>
+        {% endfor %}
+        <div class="d-flex justify-content-between align-items-center pt-3">
+          <a href="{{ url_for('catalogo') }}" class="small"><i class="bi bi-arrow-left"></i> Seguir comprando</a>
+          <button form="form-carrito" class="btn btn-outline-dark btn-sm sin-js">Actualizar cantidades</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="caja resumen">
+        <div class="d-flex justify-content-between align-items-baseline mb-3">
+          <span class="fw-semibold">Total</span>
+          <span class="total">{{ total|dinero }}</span>
+        </div>
+        <p class="small texto-suave">El valor del envío y la forma de pago se acuerdan por WhatsApp.</p>
+        <hr>
+        <h2 class="h6 fw-bold mb-3">Tus datos</h2>
+        <form method="post" action="{{ url_for('pedido_enviar') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="mb-2">
+            <label for="nombre" class="form-label small">Nombre *</label>
+            <input id="nombre" name="nombre" class="form-control" required maxlength="120" value="{{ datos.nombre }}" autocomplete="name">
+          </div>
+          <div class="mb-2">
+            <label for="telefono" class="form-label small">Teléfono / WhatsApp *</label>
+            <input id="telefono" name="telefono" type="tel" class="form-control" required maxlength="30" value="{{ datos.telefono }}" autocomplete="tel">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-sm-5">
+              <label for="ciudad" class="form-label small">Ciudad</label>
+              <input id="ciudad" name="ciudad" class="form-control" maxlength="100" value="{{ datos.ciudad }}" autocomplete="address-level2">
+            </div>
+            <div class="col-sm-7">
+              <label for="direccion" class="form-label small">Dirección</label>
+              <input id="direccion" name="direccion" class="form-control" maxlength="255" value="{{ datos.direccion }}" autocomplete="street-address">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label for="notas" class="form-label small">Notas (opcional)</label>
+            <textarea id="notas" name="notas" class="form-control" rows="2" maxlength="1000" placeholder="Ej: lo recojo en la tienda">{{ datos.notas }}</textarea>
+          </div>
+          <button class="btn btn-whatsapp btn-lg w-100"><i class="bi bi-whatsapp"></i> Enviar pedido por WhatsApp</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="vacio">
+    <i class="bi bi-cart-x"></i>
+    <p class="mb-3">Tu carrito está vacío.</p>
+    <a href="{{ url_for('catalogo') }}" class="btn btn-acento">Ver productos</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tienda.js') }}"></script>
+{% endblock %}

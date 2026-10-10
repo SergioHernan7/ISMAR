@@ -15,16 +15,15 @@ Es una tienda en línea de productos eléctricos para una cliente. Los clientes 
 - `database.py`: conexión a MySQL
 - `database/ismar.sql`: esquema. Tablas: administradores, categorias, marcas, productos, producto_imagenes, producto_especificaciones, pedidos, pedido_detalle, configuracion
 - `templates/admin/`: plantillas del panel
-- `static/css` y `static/uploads` (imágenes de productos)
+- `templates/tienda/`: plantillas de la tienda pública
+- `static/css` (`admin.css`, `tienda.css`), `static/js/tienda.js` y `static/uploads` (imágenes de productos)
 
 ## Lo que ya está hecho (en main)
 
 - Esquema de la base de datos
 - Panel de administrador en `/admin`: crear el primer admin (`/admin/setup`), login/logout, dashboard, CRUD de productos (con imágenes, especificaciones y visibilidad), categorías, marcas, pedidos (ver y cambiar estado) y configuración de la tienda (por ejemplo, el número de WhatsApp)
-
-## Lo que falta (siguiente paso)
-
-- Tienda pública: inicio, catálogo con filtros por categoría y marca, detalle de producto, carrito y botón para enviar el pedido por WhatsApp (guardando también el pedido en la tabla `pedidos`)
+- Tienda pública: inicio (`/`), catálogo con búsqueda, filtros por categoría/marca/ofertas y orden (`/catalogo`, `/categoria/<slug>`), detalle de producto (`/producto/<slug>`), carrito en la sesión (`/carrito`) y envío del pedido: se guarda en `pedidos` con código `ISM-000123` y se abre WhatsApp con el mensaje armado (`/pedido/<codigo>/gracias`)
+- El stock no se descuenta al hacer el pedido; solo se valida que alcance
 
 ## Forma de trabajar
 

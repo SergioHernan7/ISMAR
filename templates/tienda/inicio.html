@@ -1,0 +1,92 @@
+{% extends 'tienda/base.html' %}
+{% set iconos = {'iluminacion': 'lightbulb', 'cables-y-conductores': 'plug', 'interruptores-y-tomas': 'toggle-on',
+                 'proteccion-electrica': 'shield-check', 'herramientas': 'tools'} %}
+{% block titulo %}Material eléctrico{% endblock %}
+{% block contenido %}
+
+<section class="portada">
+  <div class="container py-5">
+    <div class="row align-items-center g-4">
+      <div class="col-lg-7">
+        <span class="insignia"><i class="bi bi-lightning-charge-fill"></i> Material eléctrico</span>
+        <h1 class="display-5 fw-bold mt-3">Todo para tus instalaciones eléctricas, en un solo lugar</h1>
+        <p class="lead texto-suave mb-4">Iluminación, cables, interruptores, protección y herramientas.
+          Arma tu pedido y lo terminamos juntos por WhatsApp.</p>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{{ url_for('catalogo') }}" class="btn btn-acento btn-lg">Ver catálogo</a>
+          <a href="{{ url_for('catalogo', ofertas=1) }}" class="btn btn-outline-light btn-lg"><i class="bi bi-tag"></i> Ofertas</a>
+        </div>
+      </div>
+      <div class="col-lg-5 d-none d-lg-block">
+        <div class="pasos">
+          <div><i class="bi bi-search"></i><span><strong>1. Elige</strong> tus productos</span></div>
+          <div><i class="bi bi-cart-check"></i><span><strong>2. Arma</strong> tu carrito</span></div>
+          <div><i class="bi bi-whatsapp"></i><span><strong>3. Envía</strong> el pedido por WhatsApp</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if categorias %}
+<section class="container mt-5">
+  <h2 class="titulo-seccion">Categorías</h2>
+  <div class="row g-3">
+    {% for c in categorias %}
+    <div class="col-6 col-md-4 col-lg">
+      <a href="{{ url_for('catalogo', slug=c.slug) }}" class="tarjeta-categoria">
+        {% if c.imagen %}
+        <img src="{{ url_for('static', filename=c.imagen) }}" alt="" loading="lazy">
+        {% else %}
+        <span class="icono"><i class="bi bi-{{ iconos.get(c.slug, 'lightning-charge') }}"></i></span>
+        {% endif %}
+        <span class="nombre">{{ c.nombre }}</span>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if destacados %}
+<section class="container mt-5">
+  <div class="d-flex justify-content-between align-items-end">
+    <h2 class="titulo-seccion">Productos destacados</h2>
+    <a href="{{ url_for('catalogo') }}" class="ver-todo">Ver todo <i class="bi bi-arrow-right"></i></a>
+  </div>
+  <div class="row g-3">
+    {% for p in destacados %}
+    <div class="col-6 col-md-4 col-lg-3">{% include 'tienda/_producto_tarjeta.html' %}</div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if ofertas %}
+<section class="container mt-5">
+  <div class="d-flex justify-content-between align-items-end">
+    <h2 class="titulo-seccion">Ofertas</h2>
+    <a href="{{ url_for('catalogo', ofertas=1) }}" class="ver-todo">Ver todas <i class="bi bi-arrow-right"></i></a>
+  </div>
+  <div class="row g-3">
+    {% for p in ofertas %}
+    <div class="col-6 col-md-4 col-lg-3">{% include 'tienda/_producto_tarjeta.html' %}</div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if marcas %}
+<section class="container mt-5">
+  <h2 class="titulo-seccion">Nuestras marcas</h2>
+  <div class="d-flex flex-wrap gap-2">
+    {% for m in marcas %}
+    <a href="{{ url_for('catalogo', marca=m.id) }}" class="chip-marca">
+      {% if m.logo %}<img src="{{ url_for('static', filename=m.logo) }}" alt="{{ m.nombre }}">{% else %}{{ m.nombre }}{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}
