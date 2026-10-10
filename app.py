@@ -186,10 +186,18 @@ def admin_setup():
     return render_template('admin/setup.html')
 
 
+@app.route('/login')
+def login_corto():
+    # Dirección fácil de recordar para la cliente: tutienda.com/login
+    return redirect(url_for('admin_login'))
+
+
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if not hay_administradores():
         return redirect(url_for('admin_setup'))
+    if request.method == 'GET' and 'admin_id' in session:
+        return redirect(url_for('admin_dashboard'))
     if request.method == 'POST':
         usuario = request.form.get('usuario', '').strip()
         admin = consultar('SELECT * FROM administradores WHERE (usuario = %s OR email = %s) AND activo = 1',

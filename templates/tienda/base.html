@@ -26,6 +26,9 @@
     </form>
 
     <a href="{{ url_for('catalogo') }}" class="enlace-barra d-none d-lg-inline">Catálogo</a>
+    {% if session.admin_id %}
+    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-outline-light text-nowrap"><i class="bi bi-speedometer2"></i> Panel</a>
+    {% endif %}
     <a href="{{ url_for('carrito') }}" class="enlace-barra carrito-icono ms-auto ms-md-0" aria-label="Carrito">
       <i class="bi bi-cart3"></i>
       {% if carrito_cantidad %}<span class="contador">{{ carrito_cantidad }}</span>{% endif %}
@@ -85,7 +88,10 @@
       </div>
     </div>
     <hr class="my-4">
-    <div class="small texto-suave">© {{ tienda.nombre_tienda or 'ISMAR' }}</div>
+    <div class="d-flex flex-wrap justify-content-between gap-2 small texto-suave">
+      <span>© {{ tienda.nombre_tienda or 'ISMAR' }}</span>
+      <a href="{{ url_for('admin_login') }}" class="texto-suave"><i class="bi bi-lock"></i> Acceso administradores</a>
+    </div>
   </div>
 </footer>
 
