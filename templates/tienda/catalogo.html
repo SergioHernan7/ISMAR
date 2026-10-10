@@ -1,0 +1,70 @@
+{% extends 'tienda/base.html' %}
+{% block titulo %}{{ titulo }}{% endblock %}
+
+{# URL de otra página del catálogo conservando la búsqueda y el orden actuales #}
+{% macro url_pagina(n) -%}
+  {%- set args = {'q': q or None, 'marca': marca, 'ofertas': 1 if solo_ofertas else None, 'orden': orden or None, 'pagina': n} -%}
+  {%- set limpios = {} -%}
+  {%- for k, v in args.items() if v -%}{%- set _ = limpios.update({k: v}) -%}{%- endfor -%}
+  {{- url_for('catalogo', slug=categoria.slug, **limpios) if categoria else url_for('catalogo', **limpios) -}}
+{%- endmacro %}
+
+{% block contenido %}
+<div class="container mt-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{{ url_for('inicio') }}">Inicio</a></li>
+      {% if titulo != 'Catálogo' %}
+      <li class="breadcrumb-item"><a href="{{ url_for('catalogo') }}">Catálogo</a></li>
+      <li class="breadcrumb-item active">{{ titulo }}</li>
+      {% else %}
+      <li class="breadcrumb-item active">Catálogo</li>
+      {% endif %}
+    </ol>
+  </nav>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div>
+      <h1 class="h3 fw-bold mb-1">{{ titulo }}</h1>
+      <div class="texto-suave small">{{ total }} producto{{ '' if total == 1 else 's' }}</div>
+    </div>
+    <form method="get" action="{{ url_for('catalogo', slug=categoria.slug) if categoria else url_for('catalogo') }}">
+      {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+      {% if marca %}<input type="hidden" name="marca" value="{{ marca }}">{% endif %}
+      {% if solo_ofertas %}<input type="hidden" name="ofertas" value="1">{% endif %}
+      <select name="orden" class="form-select" onchange="this.form.submit()" aria-label="Ordenar">
+        <option value="">Relevancia</option>
+        <option value="precio_asc" {{ 'selected' if orden == 'precio_asc' }}>Menor precio</option>
+        <option value="precio_desc" {{ 'selected' if orden == 'precio_desc' }}>Mayor precio</option>
+        <option value="nombre" {{ 'selected' if orden == 'nombre' }}>Nombre (A-Z)</option>
+      </select>
+    </form>
+  </div>
+
+  {% if productos %}
+  <div class="row g-3">
+    {% for p in productos %}
+    <div class="col-6 col-md-4 col-lg-3">{% include 'tienda/_producto_tarjeta.html' %}</div>
+    {% endfor %}
+  </div>
+
+  {% if paginas > 1 %}
+  <nav class="mt-4" aria-label="Páginas">
+    <ul class="pagination justify-content-center">
+      <li class="page-item {{ 'disabled' if pagina == 1 }}"><a class="page-link" href="{{ url_pagina(pagina - 1) }}" aria-label="Anterior">‹</a></li>
+      {% for n in range(1, paginas + 1) %}
+      <li class="page-item {{ 'active' if n == pagina }}"><a class="page-link" href="{{ url_pagina(n) }}">{{ n }}</a></li>
+      {% endfor %}
+      <li class="page-item {{ 'disabled' if pagina == paginas }}"><a class="page-link" href="{{ url_pagina(pagina + 1) }}" aria-label="Siguiente">›</a></li>
+    </ul>
+  </nav>
+  {% endif %}
+  {% else %}
+  <div class="vacio">
+    <i class="bi bi-search"></i>
+    <p class="mb-3">No encontramos productos{{ ' para esa búsqueda' if q }}.</p>
+    <a href="{{ url_for('catalogo') }}" class="btn btn-acento">Ver todo el catálogo</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
