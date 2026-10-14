@@ -682,7 +682,7 @@ def admin_administrador_eliminar(id):
 #  Tienda pública: utilidades
 # =====================================================
 
-PRODUCTOS_POR_PAGINA = 12
+PRODUCTOS_POR_PAGINA = 24
 MAX_CANTIDAD = 999
 
 # Productos que el público puede ver: activos y de una categoría activa
@@ -762,13 +762,19 @@ def inicio():
     categorias = consultar('SELECT * FROM categorias WHERE activa = 1 AND categoria_padre_id IS NULL '
                            'ORDER BY orden, nombre')
     destacados = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.destacado = 1 ORDER BY p.creado_en DESC LIMIT 8')
+    titulo_destacados = 'Productos destacados'
+    if not destacados:
+        # Mientras no se marquen destacados en el panel, se muestran algunos con foto
+        destacados = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.imagen_principal IS NOT NULL AND p.stock > 0 '
+                               'ORDER BY RAND() LIMIT 8')
+        titulo_destacados = 'Algunos de nuestros productos'
     ofertas = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.precio_oferta IS NOT NULL '
                         'ORDER BY p.creado_en DESC LIMIT 8')
     marcas = consultar(f'''SELECT DISTINCT m.id, m.nombre, m.logo FROM marcas m
                            JOIN ({SQL_PRODUCTOS_PUBLICOS}) p ON p.marca_id = m.id
                            WHERE m.activa = 1 ORDER BY m.nombre''')
-    return render_template('tienda/inicio.html', categorias=categorias,
-                           destacados=destacados, ofertas=ofertas, marcas=marcas)
+    return render_template('tienda/inicio.html', categorias=categorias, destacados=destacados,
+                           titulo_destacados=titulo_destacados, ofertas=ofertas, marcas=marcas)
 
 
 @app.route('/catalogo')

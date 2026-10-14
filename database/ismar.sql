@@ -154,7 +154,7 @@ CREATE TABLE configuracion (
 
 
 -- =====================================================
---  DATOS DE PRUEBA
+--  DATOS INICIALES
 -- =====================================================
 
 INSERT INTO configuracion (clave, valor, descripcion) VALUES
@@ -163,52 +163,8 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 ('moneda',          'COP',            'Moneda de los precios'),
 ('mensaje_pedido',  'Hola, quiero finalizar mi pedido', 'Texto inicial del mensaje de WhatsApp');
 
-INSERT INTO categorias (id, categoria_padre_id, nombre, slug, descripcion, orden) VALUES
-(1, NULL, 'Iluminación',            'iluminacion',            'Bombillos, lámparas y reflectores', 1),
-(2, NULL, 'Cables y conductores',   'cables-y-conductores',   'Cable eléctrico por metro y rollo', 2),
-(3, NULL, 'Interruptores y tomas',  'interruptores-y-tomas',  'Interruptores, tomacorrientes y placas', 3),
-(4, NULL, 'Protección eléctrica',   'proteccion-electrica',   'Breakers, tacos y tableros', 4),
-(5, NULL, 'Herramientas',           'herramientas',           'Herramientas para electricistas', 5),
-(6, 1,    'Bombillos LED',          'bombillos-led',          NULL, 1),
-(7, 1,    'Reflectores',            'reflectores',            NULL, 2);
-
-INSERT INTO marcas (id, nombre) VALUES
-(1, 'Philips'), (2, 'Schneider Electric'), (3, 'Legrand'), (4, 'Centelsa'), (5, 'Truper');
-
-INSERT INTO productos (id, categoria_id, marca_id, sku, nombre, slug, descripcion_corta, descripcion, precio, precio_oferta, stock, destacado) VALUES
-(1, 6, 1, 'LED-9W-BF',   'Bombillo LED 9W luz blanca',   'bombillo-led-9w-luz-blanca',
-    'Bombillo LED de bajo consumo, rosca E27', 'Bombillo LED de 9W equivalente a 60W incandescente. Luz blanca fría 6500K, rosca E27, vida útil de 15.000 horas.',
-    8500, 6900, 120, 1),
-(2, 7, 1, 'REF-50W',     'Reflector LED 50W exterior',   'reflector-led-50w-exterior',
-    'Reflector resistente al agua IP65', 'Reflector LED de 50W para exteriores, carcasa de aluminio, protección IP65.',
-    65000, NULL, 30, 1),
-(3, 2, 4, 'CAB-12-100',  'Cable THHN calibre 12 x 100m', 'cable-thhn-calibre-12-100m',
-    'Rollo de 100 metros de cable de cobre', 'Cable de cobre THHN/THWN calibre 12 AWG, rollo de 100 metros, aislamiento en PVC.',
-    285000, NULL, 15, 0),
-(4, 3, 3, 'TOM-DOB-BL',  'Tomacorriente doble blanco',   'tomacorriente-doble-blanco',
-    'Toma doble con polo a tierra', 'Tomacorriente doble con polo a tierra, 15A 125V, incluye placa.',
-    9800, NULL, 80, 0),
-(5, 4, 2, 'BRK-1P-20A',  'Breaker monopolar 20A',        'breaker-monopolar-20a',
-    'Interruptor automático enchufable', 'Breaker monopolar de 20A tipo enchufable para tablero residencial.',
-    24000, 21500, 40, 1),
-(6, 5, 5, 'PIN-PEL-8',   'Pinza peladora de cables 8"',  'pinza-peladora-cables-8',
-    'Pela, corta y poncha cables', 'Pinza peladora multifuncional de 8 pulgadas con mangos aislados.',
-    32000, NULL, 25, 0);
-
-INSERT INTO producto_especificaciones (producto_id, nombre, valor, orden) VALUES
-(1, 'Potencia', '9W', 1), (1, 'Voltaje', '110-220V', 2), (1, 'Rosca', 'E27', 3), (1, 'Temperatura de color', '6500K', 4),
-(2, 'Potencia', '50W', 1), (2, 'Protección', 'IP65', 2),
-(3, 'Calibre', '12 AWG', 1), (3, 'Longitud', '100 m', 2), (3, 'Material', 'Cobre', 3),
-(4, 'Corriente', '15A', 1), (4, 'Voltaje', '125V', 2),
-(5, 'Corriente', '20A', 1), (5, 'Polos', '1', 2);
-
--- Un pedido de ejemplo para ver cómo queda en el panel
-INSERT INTO pedidos (id, codigo, cliente_nombre, cliente_telefono, cliente_direccion, cliente_ciudad, total, estado) VALUES
-(1, 'ISM-000001', 'Cliente de prueba', '3000000000', 'Calle 1 # 2-3', 'Bogotá', 35300, 'pendiente');
-
-INSERT INTO pedido_detalle (pedido_id, producto_id, nombre_producto, precio_unitario, cantidad, subtotal) VALUES
-(1, 1, 'Bombillo LED 9W luz blanca', 6900, 2, 13800),
-(1, 5, 'Breaker monopolar 20A',      21500, 1, 21500);
+-- Los productos, categorías y fotos del catálogo real están en
+-- database/catalogo.sql: impórtalo después de este archivo.
 
 -- El administrador se crea desde la aplicación (para guardar la
 -- contraseña cifrada), no aquí.

@@ -14,6 +14,8 @@ Es una tienda en línea de productos eléctricos para una cliente. Los clientes 
 
 - `app.py`: todas las rutas, separadas por secciones (panel, administradores, tienda pública)
 - `database.py`: conexión a MySQL
+- `database/catalogo.sql`: catálogo real (139 productos y 5 categorías importados del catálogo de Treinta de la cliente: catalogo.treinta.co/ismar-productoselectricos). Se importa después de `ismar.sql`; reemplaza categorías, marcas y productos sin tocar admins, pedidos ni configuración
+- `static/catalogo/`: fotos del catálogo real (sí van en git; `static/uploads/` no)
 - `database/ismar.sql`: esquema. Tablas: administradores, categorias, marcas, productos, producto_imagenes, producto_especificaciones, pedidos, pedido_detalle, configuracion
 - `templates/admin/`: plantillas del panel
 - `templates/tienda/`: plantillas de la tienda pública (`base.html`, `_producto_tarjeta.html`, inicio, catálogo, producto, carrito, gracias, 404)
@@ -39,6 +41,8 @@ Es una tienda en línea de productos eléctricos para una cliente. Los clientes 
 - El stock **no** se descuenta al hacer el pedido; solo se valida que alcance
 
 ## Pendiente (en pausa: esperando información de la cliente)
+
+- Revisar con la cliente el catálogo importado: 21 productos sin foto, 6 en la categoría "Otros" (no tenían categoría en Treinta), "Framel 24w sobreponer L/C" con stock 15000 (parece un error de digitación), nombres con errores ("selectot", "extencion", "interperie"), ninguno tiene marca, destacado ni precio de oferta
 
 - Logo, colores y textos definitivos de la tienda
 - Número de WhatsApp real de la cliente (en la base local hay uno de prueba)
