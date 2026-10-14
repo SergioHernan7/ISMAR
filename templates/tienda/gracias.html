@@ -10,8 +10,12 @@
     <div class="codigo-pedido">{{ pedido.codigo }}</div>
 
     {% if whatsapp %}
-    <p class="mt-4 mb-3">Último paso: envíanos el pedido por WhatsApp para confirmar el pago y la entrega.</p>
-    <a href="{{ whatsapp }}" target="_blank" rel="noopener" class="btn btn-whatsapp btn-lg w-100" id="abrir-whatsapp">
+    <p class="mt-4 mb-1 fw-semibold" id="aviso-whatsapp">
+      <span class="spinner-border spinner-border-sm text-success me-1" role="status"></span>
+      Te estamos llevando a WhatsApp…
+    </p>
+    <p class="texto-suave small mb-3">Tu pedido ya va escrito en el chat: solo tienes que tocar <strong>Enviar</strong>.</p>
+    <a href="{{ whatsapp }}" class="btn btn-whatsapp btn-lg w-100" id="abrir-whatsapp">
       <i class="bi bi-whatsapp"></i> Abrir WhatsApp y enviar
     </a>
     {% else %}
@@ -33,4 +37,25 @@
     <a href="{{ url_for('inicio') }}" class="d-inline-block mt-4 small">Volver a la tienda</a>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if whatsapp %}
+<script>
+  // Abre WhatsApp solo, una vez por pedido. Si el cliente vuelve atrás, ve esta página sin que lo saque otra vez.
+  (function () {
+    var clave = 'whatsapp-abierto-{{ pedido.codigo }}';
+    var yaAbierto = false;
+    try { yaAbierto = sessionStorage.getItem(clave) === '1'; } catch (e) {}
+    if (yaAbierto) {
+      document.getElementById('aviso-whatsapp').textContent = 'Si todavía no enviaste el mensaje, toca el botón verde.';
+      return;
+    }
+    setTimeout(function () {
+      try { sessionStorage.setItem(clave, '1'); } catch (e) {}
+      window.location.href = document.getElementById('abrir-whatsapp').href;
+    }, 1200);
+  })();
+</script>
+{% endif %}
 {% endblock %}
