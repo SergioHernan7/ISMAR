@@ -37,7 +37,7 @@ Es una tienda en línea de productos eléctricos para una cliente. Los clientes 
 - Catálogo (`/catalogo`, `/categoria/<slug>`): búsqueda, orden y paginación. **Sin panel de filtros** (el usuario pidió quitarlo); se llega por el menú de categorías, el enlace "Ofertas" o las marcas del inicio (`?marca=`, `?ofertas=1` siguen funcionando)
 - Detalle de producto (`/producto/<slug>`): galería, especificaciones, relacionados. Stock visible solo como "Disponible", "Últimas unidades" (≤ 5) o "Agotado"
 - Carrito en la sesión (`/carrito`), limitado al stock
-- Pedido: obligatorios nombre y teléfono (ciudad, dirección y notas opcionales). Se guarda en `pedidos` con código `ISM-000123` y la página de gracias (`/pedido/<codigo>/gracias`) abre WhatsApp con el mensaje armado
+- Pedido: obligatorios nombre y teléfono (ciudad, dirección y notas opcionales). Se guarda en `pedidos` con código `ISM-000123` y la página de gracias (`/pedido/<codigo>/gracias`) redirige sola a WhatsApp (en 1,2 s, una sola vez por pedido gracias a `sessionStorage`) con la lista del carrito ya escrita; el botón verde queda de respaldo
 - El stock **no** se descuenta al hacer el pedido; solo se valida que alcance
 
 ## Pendiente (en pausa: esperando información de la cliente)
