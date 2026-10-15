@@ -26,10 +26,13 @@
     <table class="table table-sm text-start mt-4 mb-0">
       <tbody>
         {% for d in detalle %}
-        <tr><td>{{ d.cantidad }} × {{ d.nombre_producto }}</td><td class="text-end text-nowrap">{{ d.subtotal|dinero }}</td></tr>
+        <tr><td>{{ d.cantidad }} × {{ d.nombre_producto }}
+          {% if d.descuento %}<span class="etiqueta-oferta etiqueta-chica">-{{ d.descuento }}%</span>{% endif %}</td>
+          <td class="text-end text-nowrap">{{ d.subtotal|dinero }}</td></tr>
         {% endfor %}
       </tbody>
       <tfoot>
+        {% if ahorro %}<tr class="ahorro"><td>Descuento por ofertas</td><td class="text-end text-nowrap">-{{ ahorro|dinero }}</td></tr>{% endif %}
         <tr class="fw-bold"><td>Total</td><td class="text-end">{{ pedido.total|dinero }}</td></tr>
       </tfoot>
     </table>

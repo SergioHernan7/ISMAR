@@ -5,6 +5,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
   <h1 class="h3 mb-0">Pedido {{ pedido.codigo }}
     <span class="badge badge-estado-{{ pedido.estado }} fs-6 align-middle">{{ pedido.estado|capitalize }}</span>
+    {% if ahorro %}<span class="badge badge-oferta fs-6 align-middle"><i class="bi bi-tag-fill"></i> Con descuento</span>{% endif %}
   </h1>
   <a href="https://wa.me/{{ telefono }}" target="_blank" rel="noopener" class="btn btn-success">
     <i class="bi bi-whatsapp"></i> Escribir al cliente
@@ -23,13 +24,28 @@
               {% if d.producto_id %}<a href="{{ url_for('admin_producto_form', id=d.producto_id) }}">{{ d.nombre_producto }}</a>
               {% else %}{{ d.nombre_producto }} <span class="small text-muted">(eliminado)</span>{% endif %}
             </td>
-            <td class="text-end">{{ d.precio_unitario|dinero }}</td>
-            <td class="text-center">{{ d.cantidad }}</td>
+            <td class="text-end text-nowrap">
+              {{ d.precio_unitario|dinero }}
+              {% if d.descuento %}
+              <span class="badge badge-oferta ms-1">-{{ d.descuento }}%</span>
+              <div class="small text-muted text-decoration-line-through">{{ d.precio_lista|dinero }}</div>
+              {% endif %}
+            </td>
+            <td class="text-center">{{ d.cantidad }}
+              {% if not pedido.stock_descontado and d.stock_actual is not none and d.stock_actual < d.cantidad %}
+              <div class="small text-danger" title="Stock actual del producto">solo hay {{ d.stock_actual }}</div>{% endif %}
+            </td>
             <td class="text-end">{{ d.subtotal|dinero }}</td>
           </tr>
         {% endfor %}
         </tbody>
-        <tfoot><tr><th colspan="3" class="text-end">Total</th><th class="text-end fs-5">{{ pedido.total|dinero }}</th></tr></tfoot>
+        <tfoot>
+          {% if ahorro %}
+          <tr class="text-muted"><td colspan="3" class="text-end">Precio sin descuento</td><td class="text-end">{{ (pedido.total + ahorro)|dinero }}</td></tr>
+          <tr class="fila-descuento"><td colspan="3" class="text-end"><i class="bi bi-tag-fill"></i> Descuento por ofertas</td><td class="text-end">-{{ ahorro|dinero }}</td></tr>
+          {% endif %}
+          <tr><th colspan="3" class="text-end">Total</th><th class="text-end fs-5">{{ pedido.total|dinero }}</th></tr>
+        </tfoot>
       </table>
     </div>
   </div>
@@ -37,19 +53,25 @@
   <div class="col-lg-4">
     <div class="card border-0 shadow-sm mb-4">
       <div class="card-body">
-        <h2 class="h6 text-muted text-uppercase mb-3">Cliente</h2>
+        <h2 class="titulo-tarjeta"><i class="bi bi-person"></i> Cliente</h2>
         <p class="mb-1 fw-semibold">{{ pedido.cliente_nombre }}</p>
         <p class="mb-1"><i class="bi bi-telephone"></i> {{ pedido.cliente_telefono }}</p>
         {% if pedido.cliente_direccion %}<p class="mb-1"><i class="bi bi-geo-alt"></i> {{ pedido.cliente_direccion }}{% if pedido.cliente_ciudad %}, {{ pedido.cliente_ciudad }}{% endif %}</p>{% endif %}
         {% if pedido.notas %}<p class="mb-0 mt-2 small text-muted">{{ pedido.notas }}</p>{% endif %}
         <hr>
-        <p class="small text-muted mb-0">Creado el {{ pedido.creado_en.strftime('%d/%m/%Y a las %H:%M') }}</p>
+        <p class="small text-muted mb-1">Creado el {{ pedido.creado_en.strftime('%d/%m/%Y a las %H:%M') }}</p>
+        {% if pedido.datos_autorizados_en %}
+        <p class="small text-muted mb-0"><i class="bi bi-shield-check text-success"></i> Autorizó el tratamiento de sus datos el
+          {{ pedido.datos_autorizados_en.strftime('%d/%m/%Y a las %H:%M') }}</p>
+        {% else %}
+        <p class="small text-muted mb-0"><i class="bi bi-shield-exclamation"></i> Pedido anterior a la autorización de datos</p>
+        {% endif %}
       </div>
     </div>
 
     <div class="card border-0 shadow-sm">
       <div class="card-body">
-        <h2 class="h6 text-muted text-uppercase mb-3">Cambiar estado</h2>
+        <h2 class="titulo-tarjeta"><i class="bi bi-arrow-repeat"></i> Cambiar estado</h2>
         <form method="post">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <select name="estado" class="form-select mb-2">
@@ -58,6 +80,26 @@
             {% endfor %}
           </select>
           <button class="btn btn-dark w-100">Actualizar</button>
+        </form>
+        {% if pedido.stock_descontado %}
+        <p class="small text-muted mt-3 mb-0"><i class="bi bi-box-seam"></i> Las unidades de este pedido <strong>ya se descontaron</strong>
+          del inventario. Si lo pasas a pendiente o cancelado, vuelven.</p>
+        {% else %}
+        <p class="small text-muted mt-3 mb-0"><i class="bi bi-box-seam"></i> Al marcarlo como <strong>confirmado</strong>, enviado o entregado,
+          sus unidades se descuentan del inventario.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mt-4">
+      <div class="card-body">
+        <h2 class="titulo-tarjeta"><i class="bi bi-trash"></i> Eliminar pedido</h2>
+        <p class="small text-muted">Para pedidos de prueba o duplicados. No se puede deshacer{% if pedido.stock_descontado %};
+          sus unidades vuelven al inventario{% endif %}.</p>
+        <form method="post" action="{{ url_for('admin_pedido_eliminar', id=pedido.id) }}"
+              onsubmit="return confirm('¿Eliminar el pedido {{ pedido.codigo }}? No se puede deshacer.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-outline-danger w-100"><i class="bi bi-trash"></i> Eliminar pedido</button>
         </form>
       </div>
     </div>

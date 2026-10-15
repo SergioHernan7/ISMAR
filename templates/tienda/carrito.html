@@ -24,7 +24,11 @@
           </a>
           <div class="flex-grow-1 min-w-0">
             <a href="{{ url_for('producto_detalle', slug=p.slug) }}" class="fw-semibold text-reset text-decoration-none d-block">{{ p.nombre }}</a>
-            <div class="small texto-suave">{{ p.precio_final|dinero }} c/u</div>
+            <div class="small texto-suave">
+              {{ p.precio_final|dinero }} c/u
+              {% if p.descuento %}<span class="precio-anterior ms-1">{{ p.precio|dinero }}</span>
+              <span class="etiqueta-oferta etiqueta-chica">-{{ p.descuento }}%</span>{% endif %}
+            </div>
             <div class="d-flex flex-wrap align-items-center gap-1 mt-2">
               <div class="selector-cantidad selector-pequeno">
                 <button type="button" data-paso="-1" aria-label="Menos">−</button>
@@ -50,6 +54,13 @@
 
     <div class="col-lg-5">
       <div class="caja resumen">
+        {% set ahorro = items|sum(attribute='ahorro') %}
+        {% if ahorro %}
+        <div class="d-flex justify-content-between small mb-2 ahorro">
+          <span><i class="bi bi-tag-fill"></i> Ahorras con las ofertas</span>
+          <span class="fw-semibold">-{{ ahorro|dinero }}</span>
+        </div>
+        {% endif %}
         <div class="d-flex justify-content-between align-items-baseline mb-3">
           <span class="fw-semibold">Total</span>
           <span class="total">{{ total|dinero }}</span>
@@ -81,6 +92,25 @@
             <label for="notas" class="form-label small">Notas (opcional)</label>
             <textarea id="notas" name="notas" class="form-control" rows="2" maxlength="1000" placeholder="Ej: lo recojo en la tienda">{{ datos.notas }}</textarea>
           </div>
+          {# Autorización de datos personales (Ley 1581 de 2012): obligatoria; se guarda la fecha en el pedido #}
+          <div class="autorizacion-datos mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="acepto_datos" id="acepto_datos" value="1" required>
+              <label class="form-check-label small" for="acepto_datos">
+                Autorizo a {{ 'Eléctricos ' ~ ((tienda.nombre_tienda or 'ISMAR')|title) }} a tratar mis datos personales para gestionar
+                mi pedido, según su <a href="{{ url_for('privacidad') }}" target="_blank" rel="noopener">política de datos</a>.
+              </label>
+            </div>
+            <button class="btn btn-link btn-sm p-0 mt-1 small" type="button" data-bs-toggle="collapse" data-bs-target="#resumen-datos"
+                    aria-expanded="false" aria-controls="resumen-datos"><i class="bi bi-info-circle"></i> ¿Para qué usamos tus datos?</button>
+            <div class="collapse" id="resumen-datos">
+              <ul class="small texto-suave mt-2 mb-0 ps-3">
+                <li>Solo para registrar tu pedido, contactarte por WhatsApp y coordinar el pago y la entrega.</li>
+                <li>No los vendemos ni te enviamos publicidad sin tu permiso.</li>
+                <li>Puedes pedir que los corrijamos o borremos cuando quieras.</li>
+              </ul>
+            </div>
+          </div>
           <button class="btn btn-whatsapp btn-lg w-100"><i class="bi bi-whatsapp"></i> Enviar pedido por WhatsApp</button>
         </form>
       </div>
@@ -95,8 +125,4 @@
   </div>
   {% endif %}
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/tienda.js') }}"></script>
 {% endblock %}

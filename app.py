@@ -1,14 +1,17 @@
 import os
 import re
 import secrets
+import time
 import unicodedata
 import uuid
-from decimal import Decimal, InvalidOperation
+from datetime import date
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import wraps
 from urllib.parse import quote
 
 import mysql.connector
-from flask import (Flask, abort, flash, redirect, render_template, request,
+from PIL import Image, ImageOps, UnidentifiedImageError
+from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
                    session, url_for)
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -16,12 +19,29 @@ from werkzeug.utils import secure_filename
 from database import get_connection
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'cambia-esta-clave-en-produccion')
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB por envío
+# En el servidor (al publicar) se definen como variables de entorno:
+#   SECRET_KEY    clave larga y aleatoria: python -c "import secrets; print(secrets.token_hex(32))"
+#   ISMAR_HTTPS=1 si la tienda va por https (la cookie de sesión solo viaja cifrada)
+#   DB_HOST, DB_USER, DB_PASSWORD, DB_NAME  (ver database.py)
+app.secret_key = os.environ.get('SECRET_KEY') or 'clave-de-desarrollo-cambiar-al-publicar'
+if not os.environ.get('SECRET_KEY'):
+    app.logger.warning('SECRET_KEY no está definida: se usa una clave de desarrollo. Defínela al publicar.')
+app.config.update(
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16 MB por envío
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=os.environ.get('ISMAR_HTTPS') == '1',
+)
 
 EXTENSIONES_IMAGEN = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
 ESTADOS_PEDIDO = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado']
 STOCK_BAJO = 5
+# Ofertas: porcentaje de descuento por producto (0 = sin oferta), como en UrbanStyle
+DESCUENTO_MAXIMO = 90
+DESCUENTOS_SUGERIDOS = [5, 10, 15, 20, 25, 30, 40, 50]
+# Icono de Bootstrap Icons para cada categoría (menú de la tienda y tarjetas del inicio)
+ICONOS_CATEGORIA = {'iluminacion': 'lightbulb', 'tomas-e-interruptores': 'outlet', 'parte-electrica': 'plug',
+                    'duchas': 'droplet', 'otros': 'box-seam'}
 
 
 # =====================================================
@@ -50,6 +70,17 @@ def ejecutar(sql, params=()):
         con.close()
 
 
+def ejecutar_varios(sql, lista_params):
+    """Ejecuta la misma consulta con varios juegos de parámetros en una sola transacción."""
+    con = get_connection()
+    try:
+        cur = con.cursor()
+        cur.executemany(sql, lista_params)
+        con.commit()
+    finally:
+        con.close()
+
+
 # =====================================================
 #  Utilidades generales
 # =====================================================
@@ -74,17 +105,31 @@ def slug_unico(tabla, texto, excluir_id=None):
         slug, n = f'{base}-{n}', n + 1
 
 
+IMAGEN_LADO_MAXIMO = 1600  # px: suficiente para la galería y liviano para cargar con datos móviles
+
+
 def guardar_imagen(archivo, carpeta):
-    """Guarda una imagen subida y devuelve su ruta dentro de /static, o None."""
+    """Guarda una imagen subida y devuelve su ruta dentro de /static, o None.
+    Se reduce a IMAGEN_LADO_MAXIMO, se endereza (fotos de celular) y se guarda en WebP:
+    una foto de celular de 4 MB queda en unos 100-300 KB."""
     if not archivo or not archivo.filename:
         return None
     ext = archivo.filename.rsplit('.', 1)[-1].lower() if '.' in archivo.filename else ''
     if ext not in EXTENSIONES_IMAGEN:
         flash(f'"{archivo.filename}" no es una imagen válida (usa png, jpg, webp o gif).', 'warning')
         return None
-    nombre = f'{uuid.uuid4().hex[:12]}_{secure_filename(archivo.filename)}'
-    ruta = f'uploads/{carpeta}/{nombre}'
-    archivo.save(os.path.join(app.static_folder, ruta))
+    try:
+        imagen = Image.open(archivo.stream)
+        imagen = ImageOps.exif_transpose(imagen)  # respeta la orientación con la que se tomó la foto
+        imagen.thumbnail((IMAGEN_LADO_MAXIMO, IMAGEN_LADO_MAXIMO))
+        if imagen.mode not in ('RGB', 'RGBA'):
+            imagen = imagen.convert('RGBA' if 'A' in imagen.getbands() or 'transparency' in imagen.info else 'RGB')
+    except (UnidentifiedImageError, OSError):
+        flash(f'"{archivo.filename}" no se pudo abrir como imagen.', 'warning')
+        return None
+    base = secure_filename(archivo.filename.rsplit('.', 1)[0])[:60] or 'imagen'
+    ruta = f'uploads/{carpeta}/{uuid.uuid4().hex[:12]}_{base}.webp'
+    imagen.save(os.path.join(app.static_folder, ruta), 'WEBP', quality=82, method=6)
     return ruta
 
 
@@ -108,6 +153,8 @@ def a_decimal(valor, campo, obligatorio=True):
         raise ValueError(f'El campo {campo} debe ser un número.')
     if numero < 0:
         raise ValueError(f'El campo {campo} no puede ser negativo.')
+    if numero >= 10 ** 10:
+        raise ValueError(f'El campo {campo} es demasiado grande.')
     return numero
 
 
@@ -116,6 +163,107 @@ def formato_dinero(valor):
     if valor is None:
         return ''
     return '$' + f'{valor:,.0f}'.replace(',', '.')
+
+
+def leer_descuento(valor):
+    """Valida el % de descuento de un formulario (vacío = 0 = sin oferta)."""
+    texto = str(valor or '0').strip().replace('%', '')
+    try:
+        descuento = int(texto)
+    except ValueError:
+        descuento = -1
+    if not 0 <= descuento <= DESCUENTO_MAXIMO:
+        raise ValueError(f'El descuento debe ser un número entero entre 0 y {DESCUENTO_MAXIMO} %.')
+    return descuento
+
+
+@app.template_filter('con_descuento')
+def precio_con_descuento(precio, descuento):
+    """Precio final redondeado al peso; igual que ROUND(...) de SQL_PRODUCTOS_PUBLICOS."""
+    precio = Decimal(precio or 0)
+    return (precio * (100 - (descuento or 0)) / 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
+
+def columnas_de(tabla):
+    return {f['COLUMN_NAME'] for f in consultar(
+        'SELECT COLUMN_NAME FROM information_schema.COLUMNS '
+        'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s', (tabla,))}
+
+
+def asegurar_esquema():
+    """Pone al día las bases creadas antes de las ofertas (lo mismo que database/migraciones/):
+    001: productos.precio_oferta (precio fijo) -> productos.descuento (%)
+    002: pedido_detalle guarda precio_lista y descuento del día de la compra
+    003: pedidos.stock_descontado (el stock se descuenta al confirmar un pedido)"""
+    asegurar_columna_descuento()
+    asegurar_descuento_en_pedidos()
+    asegurar_datos_personales()
+    if 'stock_descontado' not in columnas_de('pedidos'):
+        ejecutar("ALTER TABLE pedidos ADD COLUMN stock_descontado TINYINT(1) NOT NULL DEFAULT 0 "
+                 "COMMENT '1 = sus unidades ya se restaron del inventario' AFTER estado")
+        app.logger.warning('Base actualizada: pedidos.stock_descontado')
+
+
+CONFIGURACION_DATOS_PERSONALES = [
+    ('correo_contacto', 'Correo para dudas y solicitudes sobre datos personales (sale en la política de privacidad)'),
+    ('nit', 'NIT o cédula del responsable de la tienda (sale en la política de privacidad)'),
+    ('direccion_tienda', 'Dirección física de la tienda (opcional; sale en la política de privacidad)'),
+]
+
+
+def asegurar_datos_personales():
+    """004: datos de la tienda para la política de privacidad y la fecha de autorización en cada pedido."""
+    for clave, descripcion in CONFIGURACION_DATOS_PERSONALES:
+        ejecutar("INSERT IGNORE INTO configuracion (clave, valor, descripcion) VALUES (%s, '', %s)", (clave, descripcion))
+    if 'datos_autorizados_en' not in columnas_de('pedidos'):
+        ejecutar("ALTER TABLE pedidos ADD COLUMN datos_autorizados_en DATETIME NULL "
+                 "COMMENT 'Cuándo el cliente autorizó el tratamiento de sus datos' AFTER notas")
+        app.logger.warning('Base actualizada: pedidos.datos_autorizados_en')
+
+
+def asegurar_columna_descuento():
+    columnas = columnas_de('productos')
+    if 'descuento' in columnas:
+        return
+    conexion = get_connection()
+    try:
+        cur = conexion.cursor()
+        cur.execute("ALTER TABLE productos ADD COLUMN descuento TINYINT UNSIGNED NOT NULL DEFAULT 0 "
+                    "COMMENT '% de descuento (0 = sin oferta)' AFTER precio")
+        if 'precio_oferta' in columnas:
+            cur.execute('UPDATE productos SET descuento = LEAST(%s, GREATEST(0, ROUND((1 - precio_oferta / precio) * 100))) '
+                        'WHERE precio_oferta IS NOT NULL AND precio > 0 AND precio_oferta < precio', (DESCUENTO_MAXIMO,))
+            cur.execute('ALTER TABLE productos DROP COLUMN precio_oferta')
+        conexion.commit()
+        app.logger.warning('Base actualizada: productos.precio_oferta -> productos.descuento (%)')
+    finally:
+        conexion.close()
+
+
+def asegurar_descuento_en_pedidos():
+    if 'descuento' in columnas_de('pedido_detalle'):
+        return
+    conexion = get_connection()
+    try:
+        cur = conexion.cursor()
+        cur.execute("ALTER TABLE pedido_detalle "
+                    "ADD COLUMN precio_lista DECIMAL(12,2) NULL COMMENT 'Precio normal el día de la compra' AFTER precio_unitario, "
+                    "ADD COLUMN descuento TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '% de oferta el día de la compra' AFTER precio_lista")
+        # Pedidos anteriores: si se cobró por debajo del precio actual, se deduce el descuento
+        cur.execute('UPDATE pedido_detalle d JOIN productos p ON p.id = d.producto_id '
+                    'SET d.precio_lista = p.precio, d.descuento = LEAST(%s, ROUND((1 - d.precio_unitario / p.precio) * 100)) '
+                    'WHERE d.precio_unitario < p.precio AND p.precio > 0', (DESCUENTO_MAXIMO,))
+        cur.execute('UPDATE pedido_detalle SET precio_lista = precio_unitario WHERE precio_lista IS NULL')
+        conexion.commit()
+        app.logger.warning('Base actualizada: pedido_detalle guarda precio_lista y descuento')
+    finally:
+        conexion.close()
+
+
+try:
+    asegurar_esquema()
+except mysql.connector.Error as error:  # MySQL apagado: la app arranca igual
+    app.logger.warning('No se pudo revisar el esquema de la base: %s', error)
 
 
 # =====================================================
@@ -137,12 +285,32 @@ def login_requerido(vista):
     return envoltura
 
 
+def pagina_anterior(por_defecto):
+    """La página desde donde se envió el formulario, si es de este mismo sitio."""
+    anterior = request.referrer or ''
+    return anterior if anterior.startswith(request.host_url) else por_defecto
+
+
 @app.before_request
 def verificar_csrf():
     if request.method == 'POST':
         token = session.get('csrf_token')
         if not token or token != request.form.get('csrf_token'):
-            abort(400, 'Formulario caducado, vuelve a intentarlo.')
+            # Pasa si la sesión caducó (p. ej. el navegador se cerró con la pestaña abierta):
+            # en vez de un error, se avisa y se vuelve a la página para intentarlo otra vez
+            flash('La página estaba desactualizada. Vuelve a intentarlo.', 'warning')
+            destino = pagina_anterior(url_for('admin_login') if request.path.startswith('/admin') else url_for('inicio'))
+            if request.headers.get('X-Carrito') == '1':
+                return jsonify(destino=destino)
+            return redirect(destino)
+
+
+@app.context_processor
+def variables_panel():
+    if not request.path.startswith('/admin') or 'admin_id' not in session:
+        return {}
+    fila = consultar("SELECT COUNT(*) AS n FROM pedidos WHERE estado = 'pendiente'", uno=True)
+    return {'pedidos_pendientes_menu': fila['n'] if fila else 0}
 
 
 @app.context_processor
@@ -192,6 +360,36 @@ def login_corto():
     return redirect(url_for('admin_login'))
 
 
+# Límite de intentos de inicio de sesión: tras INTENTOS_MAXIMOS fallos seguidos desde la misma
+# dirección (o con el mismo usuario) en BLOQUEO_SEGUNDOS, se bloquea ese tiempo. Vive en la memoria
+# del servidor: se reinicia al reiniciarlo, y basta para frenar a quien prueba contraseñas.
+INTENTOS_MAXIMOS = 5
+BLOQUEO_SEGUNDOS = 15 * 60
+intentos_fallidos = {}
+
+
+def claves_de_intento(usuario):
+    return [f'ip:{request.remote_addr}', f'usuario:{usuario.lower()}']
+
+
+def minutos_de_bloqueo(usuario):
+    ahora = time.time()
+    for clave in claves_de_intento(usuario):
+        recientes = [t for t in intentos_fallidos.get(clave, []) if ahora - t < BLOQUEO_SEGUNDOS]
+        intentos_fallidos[clave] = recientes
+        if len(recientes) >= INTENTOS_MAXIMOS:
+            return int((BLOQUEO_SEGUNDOS - (ahora - recientes[0])) // 60) + 1
+    return 0
+
+
+def registrar_intento(usuario, correcto):
+    for clave in claves_de_intento(usuario):
+        if correcto:
+            intentos_fallidos.pop(clave, None)
+        else:
+            intentos_fallidos.setdefault(clave, []).append(time.time())
+
+
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if not hay_administradores():
@@ -200,9 +398,16 @@ def admin_login():
         return redirect(url_for('admin_dashboard'))
     if request.method == 'POST':
         usuario = request.form.get('usuario', '').strip()
+        espera = minutos_de_bloqueo(usuario)
+        if espera:
+            flash(f'Demasiados intentos fallidos. Espera {espera} minuto{"" if espera == 1 else "s"} '
+                  'y vuelve a intentarlo.', 'danger')
+            return render_template('admin/login.html'), 429
         admin = consultar('SELECT * FROM administradores WHERE (usuario = %s OR email = %s) AND activo = 1',
                           (usuario, usuario), uno=True)
-        if admin and check_password_hash(admin['password_hash'], request.form.get('password', '')):
+        correcto = bool(admin and check_password_hash(admin['password_hash'], request.form.get('password', '')))
+        registrar_intento(usuario, correcto)
+        if correcto:
             session.clear()
             session['admin_id'] = admin['id']
             session['admin_nombre'] = admin['nombre']
@@ -236,7 +441,7 @@ def admin_dashboard():
              WHERE estado IN ('confirmado', 'enviado', 'entregado')
                AND creado_en >= DATE_FORMAT(CURDATE(), '%%Y-%%m-01'))        AS ventas_mes
     ''', (STOCK_BAJO,), uno=True)
-    ultimos_pedidos = consultar('SELECT * FROM pedidos ORDER BY creado_en DESC LIMIT 5')
+    ultimos_pedidos = consultar(SQL_PEDIDOS + ' ORDER BY pe.creado_en DESC LIMIT 5')
     poco_stock = consultar('SELECT id, nombre, stock FROM productos '
                            'WHERE activo = 1 AND stock <= %s ORDER BY stock LIMIT 5', (STOCK_BAJO,))
     return render_template('admin/dashboard.html', stats=stats,
@@ -260,28 +465,109 @@ def specs_del_formulario(f):
     return [{'nombre': n, 'valor': v} for n, v in zip(f.getlist('spec_nombre'), f.getlist('spec_valor'))]
 
 
+SQL_PRODUCTOS_ADMIN = '''SELECT p.*, c.nombre AS categoria, m.nombre AS marca
+             FROM productos p
+             JOIN categorias c ON c.id = p.categoria_id
+             LEFT JOIN marcas m ON m.id = p.marca_id
+             WHERE 1 = 1'''
+
+
+def filtros_admin_productos(q, categoria):
+    """Filtros del listado de productos del panel (incluye los ocultos)."""
+    filtros, params = '', []
+    if q:
+        filtros, params = filtro_busqueda(q)
+    if categoria:
+        filtros += ' AND (p.categoria_id = %s OR c.categoria_padre_id = %s)'
+        params += [categoria, categoria]
+    return filtros, params
+
+
 @app.route('/admin/productos')
 @login_requerido
 def admin_productos():
     q = request.args.get('q', '').strip()
     categoria = request.args.get('categoria', type=int)
-    sql = '''SELECT p.*, c.nombre AS categoria, m.nombre AS marca
-             FROM productos p
-             JOIN categorias c ON c.id = p.categoria_id
-             LEFT JOIN marcas m ON m.id = p.marca_id
-             WHERE 1 = 1'''
-    params = []
-    if q:
-        sql += ' AND (p.nombre LIKE %s OR p.sku LIKE %s)'
-        params += [f'%{q}%', f'%{q}%']
-    if categoria:
-        sql += ' AND (p.categoria_id = %s OR c.categoria_padre_id = %s)'
-        params += [categoria, categoria]
-    sql += ' ORDER BY p.creado_en DESC'
-    productos = consultar(sql, params)
+    filtros, params = filtros_admin_productos(q, categoria)
+    productos = consultar(SQL_PRODUCTOS_ADMIN + filtros + ' ORDER BY p.creado_en DESC', params)
     categorias = consultar('SELECT id, nombre FROM categorias ORDER BY nombre')
     return render_template('admin/productos.html', productos=productos, categorias=categorias,
                            q=q, categoria=categoria, STOCK_BAJO=STOCK_BAJO)
+
+
+@app.route('/admin/productos/buscar')
+@login_requerido
+def admin_productos_buscar():
+    """Sugerencias del buscador del panel: como las de la tienda, pero con los productos
+    ocultos y llevando a la página de edición."""
+    q = request.args.get('q', '').strip()[:80]
+    if len(q) < 2:
+        return jsonify(total=0, productos=[])
+    filtros, params = filtros_admin_productos(q, request.args.get('categoria', type=int))
+    total = consultar(f'SELECT COUNT(*) AS n FROM ({SQL_PRODUCTOS_ADMIN}{filtros}) t', params, uno=True)['n']
+    filas = consultar(SQL_PRODUCTOS_ADMIN + filtros + ' ORDER BY (p.nombre LIKE %s) DESC, p.nombre LIMIT 6',
+                      params + [f'{q}%'])
+    productos = []
+    for f in filas:
+        avisos = []
+        if not f['activo']:
+            avisos.append({'texto': 'Oculto', 'tipo': 'oculto'})
+        if f['stock'] <= 0:
+            avisos.append({'texto': 'Agotado', 'tipo': 'agotado'})
+        elif f['stock'] <= STOCK_BAJO:
+            avisos.append({'texto': f'{f["stock"]} uds.', 'tipo': 'poco'})
+        else:
+            avisos.append({'texto': f'{f["stock"]} uds.', 'tipo': 'stock'})
+        productos.append({
+            'nombre': f['nombre'],
+            'url': url_for('admin_producto_form', id=f['id']),
+            'imagen': url_for('static', filename=f['imagen_principal']) if f['imagen_principal'] else None,
+            'detalle': f'{f["sku"]} · {f["categoria"]}',
+            'precio': formato_dinero(precio_con_descuento(f['precio'], f['descuento'])),
+            'precio_anterior': formato_dinero(f['precio']) if f['descuento'] else None,
+            'avisos': avisos,
+        })
+    return jsonify(total=total, productos=productos)
+
+
+
+@app.route('/admin/ofertas', methods=['GET', 'POST'])
+@login_requerido
+def admin_ofertas():
+    """Asignar el % de descuento a los productos (uno por uno o a varios a la vez).
+    Con descuento, el producto sale en la página de Ofertas de la tienda."""
+    if request.method == 'POST':
+        actuales = {f['id']: f for f in consultar('SELECT id, nombre, descuento FROM productos')}
+        cambios, errores = [], []
+        for clave, valor in request.form.items():
+            if not clave.startswith('descuento_'):
+                continue
+            id_texto = clave.removeprefix('descuento_')
+            if not id_texto.isdigit() or int(id_texto) not in actuales:
+                continue
+            pid = int(id_texto)
+            try:
+                descuento = leer_descuento(valor)
+            except ValueError:
+                errores.append(actuales[pid]['nombre'])
+                continue
+            if descuento != actuales[pid]['descuento']:
+                cambios.append((descuento, pid))
+        if errores:
+            flash(f'No se guardó el descuento de: {", ".join(errores)}. Debe ser un número entero '
+                  f'entre 0 y {DESCUENTO_MAXIMO} %.', 'danger')
+        if cambios:
+            ejecutar_varios('UPDATE productos SET descuento = %s WHERE id = %s', cambios)
+            flash(f'Se actualizaron las ofertas de {len(cambios)} producto{"" if len(cambios) == 1 else "s"}.', 'success')
+        elif not errores:
+            flash('No había cambios para guardar.', 'info')
+        return redirect(url_for('admin_ofertas'))
+
+    productos = consultar(SQL_PRODUCTOS_ADMIN + ' ORDER BY p.descuento > 0 DESC, p.descuento DESC, p.nombre')
+    categorias = consultar('SELECT id, nombre FROM categorias ORDER BY nombre')
+    en_oferta = [p for p in productos if p['descuento']]
+    return render_template('admin/ofertas.html', productos=productos, categorias=categorias,
+                           en_oferta=len(en_oferta), descuento_max=max((p['descuento'] for p in en_oferta), default=0))
 
 
 @app.route('/admin/productos/nuevo', methods=['GET', 'POST'])
@@ -307,9 +593,7 @@ def admin_producto_form(id=None):
             if not f.get('categoria_id'):
                 raise ValueError('Elige una categoría.')
             precio = a_decimal(f.get('precio'), 'precio')
-            precio_oferta = a_decimal(f.get('precio_oferta'), 'precio de oferta', obligatorio=False)
-            if precio_oferta is not None and precio_oferta >= precio:
-                raise ValueError('El precio de oferta debe ser menor que el precio normal.')
+            descuento = leer_descuento(f.get('descuento'))
             stock = int(f.get('stock') or 0)
             if stock < 0:
                 raise ValueError('El stock no puede ser negativo.')
@@ -328,9 +612,9 @@ def admin_producto_form(id=None):
             'nombre': nombre,
             'slug': slug_unico('productos', nombre, excluir_id=id),
             'descripcion_corta': f.get('descripcion_corta', '').strip() or None,
-            'descripcion': f.get('descripcion', '').strip() or None,
+            'descripcion': f.get('descripcion', '').replace('\r\n', '\n').strip() or None,  # \r\n del navegador -> \n
             'precio': precio,
-            'precio_oferta': precio_oferta,
+            'descuento': descuento,
             'stock': stock,
             'destacado': 1 if f.get('destacado') else 0,
             'activo': 1 if f.get('activo') else 0,
@@ -339,6 +623,7 @@ def admin_producto_form(id=None):
         if nueva_imagen:
             datos['imagen_principal'] = nueva_imagen
 
+        galeria_nueva = []  # fotos de galería guardadas en disco en este envío (se borran si algo falla)
         con = get_connection()
         try:
             cur = con.cursor()
@@ -365,12 +650,14 @@ def admin_producto_form(id=None):
             for archivo in request.files.getlist('galeria'):
                 ruta = guardar_imagen(archivo, 'productos')
                 if ruta:
+                    galeria_nueva.append(ruta)
                     cur.execute('INSERT INTO producto_imagenes (producto_id, url) VALUES (%s, %s)',
                                 (producto_id, ruta))
             con.commit()
         except mysql.connector.IntegrityError:
             con.rollback()
-            borrar_imagen(nueva_imagen)
+            for ruta in [nueva_imagen] + galeria_nueva:
+                borrar_imagen(ruta)
             flash(f'Ya existe un producto con el SKU "{sku}".', 'danger')
             categorias, marcas = opciones_formulario_producto()
             return render_template('admin/producto_form.html', producto=f, imagenes=imagenes,
@@ -454,15 +741,26 @@ def admin_categoria_form(id=None):
     if request.method == 'POST':
         f = request.form
         nombre = f.get('nombre', '').strip()
+        padre_id = f.get('categoria_padre_id', type=int)
+        error = None
         if not nombre:
-            flash('El nombre es obligatorio.', 'danger')
+            error = 'El nombre es obligatorio.'
+        elif not re.fullmatch(r'-?\d{1,6}', (f.get('orden') or '0').strip()):
+            error = 'El orden debe ser un número entero (ej: 1, 2, 3).'
+        elif padre_id and padre_id not in {c['id'] for c in padres}:
+            error = 'Solo se puede elegir como padre una categoría principal.'
+        elif padre_id and id and consultar('SELECT id FROM categorias WHERE categoria_padre_id = %s LIMIT 1', (id,)):
+            # Hay un solo nivel de subcategorías: si esta tiene hijas, sus hijas quedarían fuera del catálogo
+            error = 'Esta categoría tiene subcategorías, así que no puede ser subcategoría de otra.'
+        if error:
+            flash(error, 'danger')
             return render_template('admin/categoria_form.html', categoria=f, padres=padres, editando=id)
         datos = {
             'nombre': nombre,
             'slug': slug_unico('categorias', nombre, excluir_id=id),
-            'categoria_padre_id': int(f['categoria_padre_id']) if f.get('categoria_padre_id') else None,
-            'descripcion': f.get('descripcion', '').strip() or None,
-            'orden': int(f.get('orden') or 0),
+            'categoria_padre_id': padre_id,
+            'descripcion': f.get('descripcion', '').replace('\r\n', '\n').strip() or None,  # \r\n del navegador -> \n
+            'orden': int((f.get('orden') or '0').strip()),
             'activa': 1 if f.get('activa') else 0,
         }
         nueva_imagen = guardar_imagen(request.files.get('imagen'), 'categorias')
@@ -539,18 +837,85 @@ def admin_marca_eliminar(id):
 #  Pedidos
 # =====================================================
 
+# Pedidos con lo que se descontó en total (0 si se vendieron a precio normal)
+SQL_PEDIDOS = '''SELECT pe.*,
+    (SELECT COALESCE(SUM((d.precio_lista - d.precio_unitario) * d.cantidad), 0)
+       FROM pedido_detalle d WHERE d.pedido_id = pe.id AND d.descuento > 0) AS ahorro
+    FROM pedidos pe'''
+
+
 @app.route('/admin/pedidos')
 @login_requerido
 def admin_pedidos():
     estado = request.args.get('estado', '')
     if estado in ESTADOS_PEDIDO:
-        pedidos = consultar('SELECT * FROM pedidos WHERE estado = %s ORDER BY creado_en DESC', (estado,))
+        pedidos = consultar(SQL_PEDIDOS + ' WHERE pe.estado = %s ORDER BY pe.creado_en DESC', (estado,))
     else:
         estado = ''
-        pedidos = consultar('SELECT * FROM pedidos ORDER BY creado_en DESC')
+        pedidos = consultar(SQL_PEDIDOS + ' ORDER BY pe.creado_en DESC')
     conteo = {f['estado']: f['n'] for f in
               consultar('SELECT estado, COUNT(*) AS n FROM pedidos GROUP BY estado')}
     return render_template('admin/pedidos.html', pedidos=pedidos, estado=estado, conteo=conteo)
+
+
+# En estos estados las unidades del pedido ya salieron del inventario
+ESTADOS_CON_STOCK_DESCONTADO = {'confirmado', 'enviado', 'entregado'}
+
+
+def mover_stock_pedido(cur, pedido_id, signo):
+    """Resta (signo = -1) o devuelve (signo = 1) al inventario las unidades de un pedido.
+    Al restar, primero revisa que alcance y devuelve la lista de productos que no tienen suficiente.
+    Los productos borrados del catálogo (producto_id NULL) se saltan."""
+    cur.execute('SELECT producto_id, nombre_producto, cantidad FROM pedido_detalle '
+                'WHERE pedido_id = %s AND producto_id IS NOT NULL', (pedido_id,))
+    cantidades, nombres = {}, {}
+    for producto_id, nombre, cantidad in cur.fetchall():
+        cantidades[producto_id] = cantidades.get(producto_id, 0) + cantidad
+        nombres[producto_id] = nombre
+    if not cantidades:
+        return []
+    # Bloquea esos productos hasta terminar, para que dos cambios a la vez no se pisen
+    cur.execute(f'SELECT id, stock FROM productos WHERE id IN ({", ".join(["%s"] * len(cantidades))}) FOR UPDATE',
+                list(cantidades))
+    stock = dict(cur.fetchall())
+    if signo < 0:
+        faltan = [f'{nombres[pid]} (hay {stock.get(pid, 0)}, el pedido lleva {cant})'
+                  for pid, cant in cantidades.items() if stock.get(pid, 0) < cant]
+        if faltan:
+            return faltan
+    for pid, cant in cantidades.items():
+        if pid in stock:
+            cur.execute('UPDATE productos SET stock = stock + %s WHERE id = %s', (signo * cant, pid))
+    return []
+
+
+def cambiar_estado_pedido(pedido, nuevo):
+    """Cambia el estado y mueve el inventario: al confirmar (o enviar/entregar) se restan las unidades;
+    si vuelve a pendiente o se cancela, se devuelven. Devuelve (ok, mensaje)."""
+    descontar = nuevo in ESTADOS_CON_STOCK_DESCONTADO
+    con = get_connection()
+    try:
+        cur = con.cursor()
+        mensaje_stock = ''
+        if descontar and not pedido['stock_descontado']:
+            faltan = mover_stock_pedido(cur, pedido['id'], -1)
+            if faltan:
+                con.rollback()
+                return False, ('No se pudo marcar como ' + nuevo + ': no hay stock suficiente de ' + '; '.join(faltan) +
+                               '. Ajusta el inventario en Productos o habla con el cliente.')
+            mensaje_stock = ' Se descontaron sus unidades del inventario.'
+        elif not descontar and pedido['stock_descontado']:
+            mover_stock_pedido(cur, pedido['id'], 1)
+            mensaje_stock = ' Sus unidades volvieron al inventario.'
+        cur.execute('UPDATE pedidos SET estado = %s, stock_descontado = %s WHERE id = %s',
+                    (nuevo, 1 if descontar else 0, pedido['id']))
+        con.commit()
+        return True, f'Pedido marcado como {nuevo}.{mensaje_stock}'
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
 
 
 @app.route('/admin/pedidos/<int:id>', methods=['GET', 'POST'])
@@ -561,13 +926,39 @@ def admin_pedido(id):
         abort(404)
     if request.method == 'POST':
         nuevo = request.form.get('estado')
-        if nuevo in ESTADOS_PEDIDO:
-            ejecutar('UPDATE pedidos SET estado = %s WHERE id = %s', (nuevo, id))
-            flash(f'Pedido marcado como {nuevo}.', 'success')
+        if nuevo in ESTADOS_PEDIDO and nuevo != pedido['estado']:
+            ok, mensaje = cambiar_estado_pedido(pedido, nuevo)
+            flash(mensaje, 'success' if ok else 'danger')
         return redirect(url_for('admin_pedido', id=id))
-    detalle = consultar('SELECT * FROM pedido_detalle WHERE pedido_id = %s', (id,))
-    telefono = re.sub(r'\D', '', pedido['cliente_telefono'])
-    return render_template('admin/pedido.html', pedido=pedido, detalle=detalle, telefono=telefono)
+    detalle = consultar('SELECT d.*, p.stock AS stock_actual FROM pedido_detalle d '
+                        'LEFT JOIN productos p ON p.id = d.producto_id WHERE d.pedido_id = %s', (id,))
+    ahorro = sum((d['precio_lista'] - d['precio_unitario']) * d['cantidad'] for d in detalle if d['descuento'])
+    telefono = telefono_whatsapp(pedido['cliente_telefono'])
+    return render_template('admin/pedido.html', pedido=pedido, detalle=detalle, telefono=telefono, ahorro=ahorro)
+
+
+@app.route('/admin/pedidos/<int:id>/eliminar', methods=['POST'])
+@login_requerido
+def admin_pedido_eliminar(id):
+    """Borra un pedido (p. ej. uno de prueba o duplicado). Si ya había descontado stock, lo devuelve."""
+    pedido = consultar('SELECT * FROM pedidos WHERE id = %s', (id,), uno=True)
+    if not pedido:
+        abort(404)
+    con = get_connection()
+    try:
+        cur = con.cursor()
+        if pedido['stock_descontado']:
+            mover_stock_pedido(cur, id, 1)
+        cur.execute('DELETE FROM pedidos WHERE id = %s', (id,))  # el detalle se borra en cascada
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+    flash(f'Pedido {pedido["codigo"]} eliminado.' + (' Sus unidades volvieron al inventario.'
+                                                      if pedido['stock_descontado'] else ''), 'success')
+    return redirect(url_for('admin_pedidos'))
 
 
 # =====================================================
@@ -578,13 +969,31 @@ def admin_pedido(id):
 @login_requerido
 def admin_configuracion():
     if request.method == 'POST':
+        valores = {}
         for clave in [f['clave'] for f in consultar('SELECT clave FROM configuracion')]:
             if clave in request.form:
-                ejecutar('UPDATE configuracion SET valor = %s WHERE clave = %s',
-                         (request.form[clave].strip(), clave))
+                valores[clave] = request.form[clave].strip()
+        actual = config_tienda().get('whatsapp_numero', '')
+        if 'whatsapp_numero' in valores and valores['whatsapp_numero'] != actual:
+            # Se guarda solo con dígitos y con el código de país, que WhatsApp necesita
+            numero = telefono_whatsapp(valores['whatsapp_numero'])
+            if not 11 <= len(numero) <= 15:
+                flash('El número de WhatsApp no es válido. Escríbelo con el código de país, '
+                      'por ejemplo 573001234567 (57 + el celular). No se guardó ningún cambio.', 'danger')
+                return redirect(url_for('admin_configuracion'))
+            valores['whatsapp_numero'] = numero
+        correo = valores.get('correo_contacto', '')
+        if correo and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', correo):
+            flash('El correo de contacto no parece válido. No se guardó ningún cambio.', 'danger')
+            return redirect(url_for('admin_configuracion'))
+        for clave, valor in valores.items():
+            ejecutar('UPDATE configuracion SET valor = %s WHERE clave = %s', (valor, clave))
         flash('Configuración guardada.', 'success')
         return redirect(url_for('admin_configuracion'))
-    ajustes = consultar('SELECT * FROM configuracion ORDER BY clave')
+    ajustes = consultar("SELECT * FROM configuracion ORDER BY FIELD(clave, 'nombre_tienda', 'whatsapp_numero', "
+                        "'mensaje_pedido', 'moneda', 'correo_contacto', 'nit', 'direccion_tienda') = 0, "
+                        "FIELD(clave, 'nombre_tienda', 'whatsapp_numero', 'mensaje_pedido', 'moneda', "
+                        "'correo_contacto', 'nit', 'direccion_tienda'), clave")
     return render_template('admin/configuracion.html', ajustes=ajustes)
 
 
@@ -688,7 +1097,7 @@ MAX_CANTIDAD = 999
 # Productos que el público puede ver: activos y de una categoría activa
 SQL_PRODUCTOS_PUBLICOS = '''
     SELECT p.*, c.nombre AS categoria, c.slug AS categoria_slug, m.nombre AS marca,
-           COALESCE(p.precio_oferta, p.precio) AS precio_final
+           ROUND(p.precio * (100 - p.descuento) / 100) AS precio_final
     FROM productos p
     JOIN categorias c ON c.id = p.categoria_id
     LEFT JOIN categorias cp ON cp.id = c.categoria_padre_id
@@ -696,14 +1105,35 @@ SQL_PRODUCTOS_PUBLICOS = '''
     WHERE p.activo = 1 AND c.activa = 1 AND COALESCE(cp.activa, 1) = 1'''
 
 
+def filtro_busqueda(q):
+    """Filtro SQL del buscador: cada palabra debe aparecer en el nombre, la descripción,
+    el código, la marca o la categoría, sin importar el orden ("20w bombillo" encuentra "Bombillo 20w").
+    La intercalación utf8mb4_unicode_ci ya ignora mayúsculas y tildes."""
+    filtros, params = '', []
+    for palabra in q.split()[:8]:
+        filtros += (' AND (p.nombre LIKE %s OR p.descripcion_corta LIKE %s OR p.sku LIKE %s'
+                    ' OR m.nombre LIKE %s OR c.nombre LIKE %s)')
+        params += [f'%{palabra}%'] * 5
+    return filtros, params
+
+
 def config_tienda():
     return {f['clave']: f['valor'] for f in consultar('SELECT clave, valor FROM configuracion')}
 
 
+def telefono_whatsapp(numero):
+    """Deja solo los dígitos y, si es un celular colombiano sin código de país (10 dígitos que
+    empiezan por 3, p. ej. 3214249330), le agrega el 57. WhatsApp necesita el número completo."""
+    numero = re.sub(r'\D', '', numero or '')
+    if len(numero) == 10 and numero.startswith('3'):
+        numero = '57' + numero
+    return numero
+
+
 def enlace_whatsapp(numero, texto=''):
     """Devuelve el enlace wa.me, o None si el número no está bien configurado."""
-    numero = re.sub(r'\D', '', numero or '')
-    if len(numero) < 10:
+    numero = telefono_whatsapp(numero)
+    if len(numero) < 11:
         return None
     return f'https://wa.me/{numero}' + (f'?text={quote(texto)}' if texto else '')
 
@@ -728,12 +1158,27 @@ def carrito_detallado():
     for p in productos:
         cantidad = carrito[str(p['id'])]
         subtotal = p['precio_final'] * cantidad
-        items.append({'producto': p, 'cantidad': cantidad, 'subtotal': subtotal})
+        ahorro = (p['precio'] - p['precio_final']) * cantidad
+        items.append({'producto': p, 'cantidad': cantidad, 'subtotal': subtotal, 'ahorro': ahorro})
         total += subtotal
     # Si un producto se ocultó o se borró desde el panel, sale del carrito
     if len(items) != len(carrito):
         guardar_carrito({str(i['producto']['id']): i['cantidad'] for i in items})
     return items, total
+
+
+@app.context_processor
+def constantes_ofertas():
+    return {'DESCUENTO_MAXIMO': DESCUENTO_MAXIMO, 'DESCUENTOS_SUGERIDOS': DESCUENTOS_SUGERIDOS}
+
+
+@app.after_request
+def sin_copias_viejas(respuesta):
+    """Las páginas HTML no se guardan en caché: al usar "atrás", el navegador las vuelve a pedir
+    y muestra el carrito real (si no, enseñaba una copia con el contador viejo)."""
+    if respuesta.mimetype == 'text/html':
+        respuesta.headers['Cache-Control'] = 'no-store'
+    return respuesta
 
 
 @app.context_processor
@@ -748,8 +1193,13 @@ def variables_tienda():
         'tienda': tienda,
         'whatsapp_contacto': enlace_whatsapp(tienda.get('whatsapp_numero')),
         'carrito_cantidad': sum(carrito_sesion().values()),
+        # Unidades de cada producto que ya están en el carrito ({'12': 3}); las tarjetas
+        # lo usan para desactivar "Agregar" cuando ya se pidió todo el stock
+        'carrito_items': carrito_sesion(),
         'categorias_menu': categorias_menu,
         'STOCK_BAJO': STOCK_BAJO,
+        'iconos_categoria': ICONOS_CATEGORIA,
+        'anio_actual': date.today().year,
     }
 
 
@@ -768,18 +1218,19 @@ def inicio():
         destacados = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.imagen_principal IS NOT NULL AND p.stock > 0 '
                                'ORDER BY RAND() LIMIT 8')
         titulo_destacados = 'Algunos de nuestros productos'
-    ofertas = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.precio_oferta IS NOT NULL '
-                        'ORDER BY p.creado_en DESC LIMIT 8')
     marcas = consultar(f'''SELECT DISTINCT m.id, m.nombre, m.logo FROM marcas m
                            JOIN ({SQL_PRODUCTOS_PUBLICOS}) p ON p.marca_id = m.id
                            WHERE m.activa = 1 ORDER BY m.nombre''')
     return render_template('tienda/inicio.html', categorias=categorias, destacados=destacados,
-                           titulo_destacados=titulo_destacados, ofertas=ofertas, marcas=marcas)
+                           titulo_destacados=titulo_destacados, marcas=marcas)
 
 
 @app.route('/catalogo')
 @app.route('/categoria/<slug>')
 def catalogo(slug=None):
+    # Los enlaces viejos a ?ofertas=1 llevan a la página de Ofertas
+    if request.args.get('ofertas') == '1':
+        return redirect(url_for('ofertas'), 301)
     categoria = None
     if slug:
         categoria = consultar('SELECT * FROM categorias WHERE slug = %s AND activa = 1', (slug,), uno=True)
@@ -787,7 +1238,6 @@ def catalogo(slug=None):
             abort(404)
     q = request.args.get('q', '').strip()
     marca = request.args.get('marca', type=int)
-    solo_ofertas = request.args.get('ofertas') == '1'
     orden = request.args.get('orden', '')
     pagina = max(request.args.get('pagina', 1, type=int), 1)
 
@@ -796,13 +1246,12 @@ def catalogo(slug=None):
         filtros += ' AND (c.id = %s OR c.categoria_padre_id = %s)'
         params += [categoria['id'], categoria['id']]
     if q:
-        filtros += ' AND (p.nombre LIKE %s OR p.descripcion_corta LIKE %s OR p.sku LIKE %s OR m.nombre LIKE %s)'
-        params += [f'%{q}%'] * 4
+        filtro_q, params_q = filtro_busqueda(q)
+        filtros += filtro_q
+        params += params_q
     if marca:
         filtros += ' AND p.marca_id = %s'
         params.append(marca)
-    if solo_ofertas:
-        filtros += ' AND p.precio_oferta IS NOT NULL'
 
     ordenes = {
         'precio_asc': 'precio_final ASC',
@@ -822,8 +1271,6 @@ def catalogo(slug=None):
         titulo = categoria['nombre']
     elif q:
         titulo = f'Resultados para "{q}"'
-    elif solo_ofertas:
-        titulo = 'Ofertas'
     elif marca:
         fila = consultar('SELECT nombre FROM marcas WHERE id = %s', (marca,), uno=True)
         titulo = fila['nombre'] if fila else 'Catálogo'
@@ -831,9 +1278,50 @@ def catalogo(slug=None):
         titulo = 'Catálogo'
 
     return render_template('tienda/catalogo.html', productos=productos, categoria=categoria, titulo=titulo,
-                           q=q, marca=marca, solo_ofertas=solo_ofertas, orden=orden,
+                           q=q, marca=marca, orden=orden,
                            pagina=pagina, paginas=paginas, total=total)
 
+
+@app.route('/ofertas')
+def ofertas():
+    """Productos con descuento. El titular sale de los descuentos que el admin tenga asignados
+    (cantidad y "hasta X %"): si cambian o se quitan, la página cambia sola."""
+    productos = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.descuento > 0 '
+                          'ORDER BY (p.stock > 0) DESC, p.descuento DESC, p.nombre')
+    descuentos = {p['descuento'] for p in productos}
+    return render_template('tienda/ofertas.html', productos=productos,
+                           descuento_max=max(descuentos, default=0), descuento_variable=len(descuentos) > 1)
+
+
+@app.route('/privacidad')
+def privacidad():
+    """Política de tratamiento de datos personales (Ley 1581 de 2012). Los datos del responsable
+    (correo, NIT, dirección) salen de Configuración."""
+    return render_template('tienda/privacidad.html')
+
+
+@app.route('/buscar')
+def buscar_sugerencias():
+    """Resultados rápidos para la lista que aparece bajo el buscador mientras se escribe."""
+    q = request.args.get('q', '').strip()[:80]
+    if len(q) < 2:
+        return jsonify(total=0, productos=[])
+    filtros, params = filtro_busqueda(q)
+    total = consultar(f'SELECT COUNT(*) AS n FROM ({SQL_PRODUCTOS_PUBLICOS}{filtros}) t', params, uno=True)['n']
+    # Primero los que empiezan con lo escrito, luego los disponibles, luego por nombre
+    filas = consultar(SQL_PRODUCTOS_PUBLICOS + filtros +
+                      ' ORDER BY (p.nombre LIKE %s) DESC, (p.stock > 0) DESC, p.destacado DESC, p.nombre LIMIT 6',
+                      params + [f'{q}%'])
+    productos = [{
+        'nombre': f['nombre'],
+        'url': url_for('producto_detalle', slug=f['slug']),
+        'imagen': url_for('static', filename=f['imagen_principal']) if f['imagen_principal'] else None,
+        'detalle': f['categoria'],
+        'precio': formato_dinero(f['precio_final']),
+        'precio_anterior': formato_dinero(f['precio']) if f['descuento'] else None,
+        'avisos': [{'texto': 'Agotado', 'tipo': 'agotado'}] if f['stock'] <= 0 else [],
+    } for f in filas]
+    return jsonify(total=total, productos=productos)
 
 @app.route('/producto/<slug>')
 def producto_detalle(slug):
@@ -861,6 +1349,16 @@ def carrito():
                            datos=session.get('datos_cliente', {}))
 
 
+def volver_a(url):
+    """Respuesta de las acciones del carrito. Si la pidió static/js/tienda.js (encabezado X-Carrito),
+    devuelve la dirección en JSON para que el navegador *reemplace* la página actual; así agregar,
+    quitar o cambiar cantidades no deja páginas repetidas en el historial (botón "atrás").
+    Sin JavaScript, redirige como siempre."""
+    if request.headers.get('X-Carrito') == '1':
+        return jsonify(destino=url)
+    return redirect(url)
+
+
 @app.route('/carrito/agregar', methods=['POST'])
 def carrito_agregar():
     producto_id = request.form.get('producto_id', type=int)
@@ -882,7 +1380,7 @@ def carrito_agregar():
         else:
             flash(f'"{producto["nombre"]}" se agregó al carrito.', 'success')
     destino = request.form.get('volver', '')
-    return redirect(destino if destino.startswith('/') and not destino.startswith('//') else url_for('carrito'))
+    return volver_a(destino if destino.startswith('/') and not destino.startswith('//') else url_for('carrito'))
 
 
 @app.route('/carrito/actualizar', methods=['POST'])
@@ -898,7 +1396,7 @@ def carrito_actualizar():
             flash(f'Solo hay {p["stock"]} unidades de "{p["nombre"]}".', 'warning')
         carrito[str(p['id'])] = max(min(cantidad, p['stock'], MAX_CANTIDAD), 0)
     guardar_carrito(carrito)
-    return redirect(url_for('carrito'))
+    return volver_a(url_for('carrito'))
 
 
 @app.route('/carrito/quitar/<int:producto_id>', methods=['POST'])
@@ -907,7 +1405,7 @@ def carrito_quitar(producto_id):
     carrito.pop(str(producto_id), None)
     guardar_carrito(carrito)
     flash('Producto quitado del carrito.', 'success')
-    return redirect(url_for('carrito'))
+    return volver_a(url_for('carrito'))
 
 
 @app.route('/pedido/enviar', methods=['POST'])
@@ -929,6 +1427,9 @@ def pedido_enviar():
     if not datos['nombre'] or len(re.sub(r'\D', '', datos['telefono'])) < 7:
         flash('Escribe tu nombre y un número de teléfono válido.', 'danger')
         return redirect(url_for('carrito'))
+    if not f.get('acepto_datos'):
+        flash('Para enviar el pedido debes autorizar el tratamiento de tus datos personales.', 'danger')
+        return redirect(url_for('carrito'))
     agotados = [i['producto']['nombre'] for i in items if i['cantidad'] > i['producto']['stock']]
     if agotados:
         flash('Ya no hay suficientes unidades de: ' + ', '.join(agotados) + '. Ajusta las cantidades.', 'danger')
@@ -939,7 +1440,7 @@ def pedido_enviar():
         cur = con.cursor()
         # El código se arma con el id, así que primero se guarda con uno temporal
         cur.execute('INSERT INTO pedidos (codigo, cliente_nombre, cliente_telefono, cliente_direccion, '
-                    'cliente_ciudad, notas, total) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+                    'cliente_ciudad, notas, total, datos_autorizados_en) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())',
                     (uuid.uuid4().hex[:20], datos['nombre'], datos['telefono'], datos['direccion'] or None,
                      datos['ciudad'] or None, datos['notas'] or None, total))
         pedido_id = cur.lastrowid
@@ -947,9 +1448,10 @@ def pedido_enviar():
         cur.execute('UPDATE pedidos SET codigo = %s WHERE id = %s', (codigo, pedido_id))
         for i in items:
             p = i['producto']
-            cur.execute('INSERT INTO pedido_detalle (pedido_id, producto_id, nombre_producto, '
-                        'precio_unitario, cantidad, subtotal) VALUES (%s, %s, %s, %s, %s, %s)',
-                        (pedido_id, p['id'], p['nombre'], p['precio_final'], i['cantidad'], i['subtotal']))
+            cur.execute('INSERT INTO pedido_detalle (pedido_id, producto_id, nombre_producto, precio_unitario, '
+                        'precio_lista, descuento, cantidad, subtotal) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
+                        (pedido_id, p['id'], p['nombre'], p['precio_final'], p['precio'], p['descuento'],
+                         i['cantidad'], i['subtotal']))
         con.commit()
     except Exception:
         con.rollback()
@@ -975,8 +1477,14 @@ def pedido_gracias(codigo):
 
     lineas = [tienda.get('mensaje_pedido', 'Hola, quiero finalizar mi pedido'), '',
               f'*Pedido {pedido["codigo"]}*']
+    ahorro = 0
     for d in detalle:
-        lineas.append(f'• {d["cantidad"]} x {d["nombre_producto"]} — {formato_dinero(d["subtotal"])}')
+        oferta = f' (oferta -{d["descuento"]}%)' if d['descuento'] else ''
+        lineas.append(f'• {d["cantidad"]} x {d["nombre_producto"]}{oferta} — {formato_dinero(d["subtotal"])}')
+        if d['descuento']:
+            ahorro += (d['precio_lista'] - d['precio_unitario']) * d['cantidad']
+    if ahorro:
+        lineas.append(f'Descuento por ofertas: -{formato_dinero(ahorro)}')
     lineas += [f'*Total: {formato_dinero(pedido["total"])}*', '',
                f'Nombre: {pedido["cliente_nombre"]}', f'Teléfono: {pedido["cliente_telefono"]}']
     if pedido['cliente_ciudad']:
@@ -987,7 +1495,7 @@ def pedido_gracias(codigo):
         lineas.append(f'Notas: {pedido["notas"]}')
     whatsapp = enlace_whatsapp(tienda.get('whatsapp_numero'), '\n'.join(lineas))
 
-    return render_template('tienda/gracias.html', pedido=pedido, detalle=detalle, whatsapp=whatsapp)
+    return render_template('tienda/gracias.html', pedido=pedido, detalle=detalle, whatsapp=whatsapp, ahorro=ahorro)
 
 
 @app.errorhandler(404)
@@ -997,5 +1505,20 @@ def no_encontrado(e):
     return render_template('tienda/404.html'), 404
 
 
+@app.errorhandler(413)
+def archivo_muy_grande(e):
+    flash('El archivo es demasiado grande (máximo 16 MB por envío).', 'danger')
+    return redirect(pagina_anterior(url_for('admin_dashboard')))
+
+
+@app.errorhandler(500)
+def error_del_servidor(e):
+    # Página propia (sin la base de datos) en vez del error técnico; el detalle queda en el registro
+    return render_template('error.html', titulo='Algo salió mal', icono='exclamation-triangle',
+                           mensaje='Tuvimos un problema al cargar esta página. Inténtalo de nuevo en unos minutos.'), 500
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Solo para trabajar en el computador. Al publicar, el servidor importa "app" (WSGI) y no pasa por aquí,
+    # así que el modo de pruebas nunca queda activo en internet. ISMAR_DEBUG=0 lo apaga también aquí.
+    app.run(debug=os.environ.get('ISMAR_DEBUG', '1') == '1')

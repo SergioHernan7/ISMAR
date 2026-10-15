@@ -5,12 +5,22 @@
 
 <div class="card border-0 shadow-sm" style="max-width: 640px">
   <div class="card-body">
+    <h2 class="titulo-tarjeta"><i class="bi bi-shop"></i> Datos de la tienda</h2>
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% set etiquetas = {'nombre_tienda': 'Nombre de la tienda', 'whatsapp_numero': 'Número de WhatsApp',
+                          'mensaje_pedido': 'Mensaje inicial del pedido', 'moneda': 'Moneda',
+                          'correo_contacto': 'Correo de contacto', 'nit': 'NIT o cédula', 'direccion_tienda': 'Dirección de la tienda'} %}
       {% for a in ajustes %}
+      {% if a.clave == 'correo_contacto' %}
+      <h3 class="subtitulo-tarjeta"><i class="bi bi-shield-check"></i> Para la política de datos personales</h3>
+      <p class="small text-muted">Salen en la página <a href="{{ url_for('privacidad') }}" target="_blank" rel="noopener">Tratamiento de datos</a>
+        de la tienda. Los vacíos no se muestran.</p>
+      {% endif %}
       <div class="mb-3">
-        <label class="form-label fw-semibold" for="{{ a.clave }}">{{ a.clave.replace('_', ' ')|capitalize }}</label>
-        <input id="{{ a.clave }}" name="{{ a.clave }}" class="form-control" value="{{ a.valor }}" maxlength="255">
+        <label class="form-label fw-semibold" for="{{ a.clave }}">{{ etiquetas.get(a.clave, a.clave.replace('_', ' ')|capitalize) }}</label>
+        <input id="{{ a.clave }}" name="{{ a.clave }}" class="form-control" value="{{ a.valor }}" maxlength="255"
+               {% if a.clave == 'correo_contacto' %}type="email"{% endif %}>
         {% if a.descripcion %}<div class="form-text">{{ a.descripcion }}</div>{% endif %}
       </div>
       {% endfor %}
