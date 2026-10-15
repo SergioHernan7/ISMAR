@@ -1,0 +1,83 @@
+{% extends 'tienda/base.html' %}
+{# Borrador para revisar con la cliente. Los datos del responsable salen de panel > Configuración #}
+{% set nombre = 'Eléctricos ' ~ ((tienda.nombre_tienda or 'ISMAR')|title) %}
+{% set numero = (tienda.whatsapp_numero or '')|replace('X', '') %}
+{% block titulo %}Política de tratamiento de datos personales{% endblock %}
+{% block descripcion %}Cómo {{ nombre }} recolecta, usa y protege tus datos personales, y cómo ejercer tus derechos (Ley 1581 de 2012).{% endblock %}
+{% block contenido %}
+<div class="container mt-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{{ url_for('inicio') }}">Inicio</a></li>
+      <li class="breadcrumb-item active">Tratamiento de datos personales</li>
+    </ol>
+  </nav>
+
+  <article class="caja texto-legal mb-5">
+    <h1 class="h3 fw-bold mb-1">Política de tratamiento de datos personales</h1>
+    <p class="texto-suave small mb-4">En cumplimiento de la Ley 1581 de 2012 y el Decreto 1377 de 2013 (compilado en el Decreto 1074 de 2015).</p>
+
+    <h2>1. Responsable del tratamiento</h2>
+    <ul>
+      <li><strong>{{ nombre }}</strong>{% if tienda.nit %}, identificado con NIT/C.C. {{ tienda.nit }}{% endif %}.</li>
+      {% if tienda.direccion_tienda %}<li>Dirección: {{ tienda.direccion_tienda }}.</li>{% endif %}
+      {% if whatsapp_contacto %}<li>WhatsApp: <a href="{{ whatsapp_contacto }}" target="_blank" rel="noopener">+{{ numero }}</a>.</li>{% endif %}
+      {% if tienda.correo_contacto %}<li>Correo: <a href="mailto:{{ tienda.correo_contacto }}">{{ tienda.correo_contacto }}</a>.</li>{% endif %}
+    </ul>
+
+    <h2>2. Qué datos recolectamos</h2>
+    <p>Cuando haces un pedido te pedimos: <strong>nombre</strong> y <strong>teléfono o WhatsApp</strong> (obligatorios), y si quieres,
+      <strong>ciudad</strong>, <strong>dirección</strong> y <strong>notas</strong> del pedido. No pedimos datos sensibles, ni datos de tarjetas
+      o cuentas bancarias: el pago se acuerda directamente por WhatsApp. No necesitas crear una cuenta para comprar.</p>
+
+    <h2>3. Para qué los usamos</h2>
+    <ul>
+      <li>Registrar, confirmar y gestionar tu pedido.</li>
+      <li>Comunicarnos contigo por WhatsApp o llamada sobre tu pedido, el pago y la entrega.</li>
+      <li>Coordinar el envío o la entrega de los productos.</li>
+      <li>Llevar el registro de ventas e inventario de la tienda y cumplir obligaciones legales, contables y tributarias.</li>
+      <li>Atender tus preguntas, solicitudes y reclamos.</li>
+    </ul>
+    <p>No usaremos tus datos para enviarte publicidad sin pedirte una autorización aparte.</p>
+
+    <h2>4. Con quién los compartimos</h2>
+    <p>No vendemos ni cedemos tus datos. Solo los compartimos cuando es necesario para tu pedido: con la empresa de mensajería o
+      transporte que haga la entrega, y con los proveedores que nos prestan servicios tecnológicos (por ejemplo, el alojamiento de
+      esta página y WhatsApp, cuando nos escribes por ese medio), quienes deben proteger la información.</p>
+
+    <h2>5. Tus derechos</h2>
+    <p>Como titular de tus datos tienes derecho a:</p>
+    <ul>
+      <li>Conocer, actualizar y rectificar tus datos personales.</li>
+      <li>Pedir prueba de la autorización que nos diste.</li>
+      <li>Ser informado sobre el uso que les damos.</li>
+      <li>Revocar la autorización y pedir que borremos tus datos, cuando no exista un deber legal o contractual de conservarlos.</li>
+      <li>Acceder gratuitamente a tus datos.</li>
+      <li>Presentar quejas ante la Superintendencia de Industria y Comercio (SIC) por infracciones a la ley.</li>
+    </ul>
+
+    <h2>6. Cómo ejercer tus derechos</h2>
+    <p>Escríbenos
+      {% if whatsapp_contacto %}por <a href="{{ whatsapp_contacto }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
+      {% if whatsapp_contacto and tienda.correo_contacto %} o {% endif %}
+      {% if tienda.correo_contacto %}al correo <a href="mailto:{{ tienda.correo_contacto }}">{{ tienda.correo_contacto }}</a>{% endif %}
+      indicando tu nombre, tu teléfono y lo que solicitas. Respondemos las <strong>consultas</strong> en máximo 10 días hábiles y los
+      <strong>reclamos</strong> (corrección, actualización, supresión o revocatoria) en máximo 15 días hábiles, como lo establece la ley.</p>
+
+    <h2>7. Cuánto tiempo los guardamos</h2>
+    <p>Mientras sean necesarios para las finalidades descritas y durante el tiempo que exijan las normas contables y tributarias.
+      Después se eliminan.</p>
+
+    <h2>8. Seguridad</h2>
+    <p>Tomamos medidas razonables para proteger tus datos contra acceso no autorizado, pérdida o uso indebido. Solo el personal
+      autorizado de la tienda puede consultarlos.</p>
+
+    <h2>9. Cookies</h2>
+    <p>Esta página usa una única cookie técnica, necesaria para recordar tu carrito mientras compras. No usamos cookies de publicidad
+      ni de rastreo.</p>
+
+    <h2>10. Vigencia</h2>
+    <p class="mb-0">Esta política rige desde su publicación en esta página. Si la cambiamos, publicaremos aquí la versión actualizada.</p>
+  </article>
+</div>
+{% endblock %}

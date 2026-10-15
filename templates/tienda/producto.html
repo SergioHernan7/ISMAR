@@ -1,6 +1,20 @@
 {% extends 'tienda/base.html' %}
 {% block titulo %}{{ producto.nombre }}{% endblock %}
-{% block descripcion %}{{ producto.descripcion_corta or producto.nombre }}{% endblock %}
+{# Descripción para buscadores y para la vista previa: la corta, o el primer párrafo de la completa #}
+{% block descripcion %}{{ (producto.descripcion_corta or (producto.descripcion or producto.nombre).split('
+
+')[0])|replace('
+', ' ')|truncate(180) }}{% endblock %}
+{% block og_tipo %}product{% endblock %}
+{% block og_titulo %}{{ producto.nombre }} · {{ producto.precio_final|dinero }}{% if producto.descuento %} (-{{ producto.descuento }}%, antes {{ producto.precio|dinero }}){% endif %}{% endblock %}
+{% block og_imagen %}
+{% if producto.imagen_principal %}
+<meta property="og:image" content="{{ url_for('static', filename=producto.imagen_principal, _external=True) }}">
+<meta property="og:image:alt" content="{{ producto.nombre }}">
+{% else %}{{ super() }}{% endif %}
+<meta property="product:price:amount" content="{{ '%d'|format(producto.precio_final) }}">
+<meta property="product:price:currency" content="COP">
+{% endblock %}
 {% block contenido %}
 {% set fotos = ([producto.imagen_principal] if producto.imagen_principal else []) + imagenes|map(attribute='url')|list %}
 <div class="container mt-4">
@@ -39,11 +53,14 @@
 
       <div class="precios precios-grandes mb-2">
         <span class="precio">{{ producto.precio_final|dinero }}</span>
-        {% if producto.precio_oferta %}
+        {% if producto.descuento %}
         <span class="precio-anterior">{{ producto.precio|dinero }}</span>
-        <span class="etiqueta-oferta position-static">-{{ ((1 - producto.precio_oferta / producto.precio) * 100)|round|int }}%</span>
+        <span class="etiqueta-oferta position-static">-{{ producto.descuento }}%</span>
         {% endif %}
       </div>
+      {% if producto.descuento %}
+      <p class="ahorro mb-2"><i class="bi bi-tag-fill"></i> Ahorras {{ (producto.precio - producto.precio_final)|dinero }} en cada unidad</p>
+      {% endif %}
 
       <div class="mb-3">
         {% if producto.stock <= 0 %}
@@ -57,18 +74,27 @@
 
       {% if producto.descripcion_corta %}<p class="lead fs-6">{{ producto.descripcion_corta }}</p>{% endif %}
 
-      {% if producto.stock > 0 %}
-      <form method="post" action="{{ url_for('carrito_agregar') }}" class="d-flex gap-2 my-4">
+      {# Lo que aún se puede agregar: el stock menos lo que ya está en el carrito #}
+      {% set en_carrito = carrito_items.get(producto.id|string, 0) %}
+      {% set disponible = producto.stock - en_carrito %}
+      {% if producto.stock > 0 and disponible > 0 %}
+      <form method="post" action="{{ url_for('carrito_agregar') }}" class="d-flex gap-2 mt-4 mb-2">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="producto_id" value="{{ producto.id }}">
         <input type="hidden" name="volver" value="{{ request.path }}">
         <div class="selector-cantidad">
           <button type="button" data-paso="-1" aria-label="Menos">−</button>
-          <input type="number" name="cantidad" value="1" min="1" max="{{ producto.stock }}" aria-label="Cantidad">
+          <input type="number" name="cantidad" value="1" min="1" max="{{ disponible }}" aria-label="Cantidad">
           <button type="button" data-paso="1" aria-label="Más">+</button>
         </div>
         <button class="btn btn-acento btn-lg flex-grow-1"><i class="bi bi-cart-plus"></i> Agregar al carrito</button>
       </form>
+      {% if en_carrito %}
+      <p class="aviso-carrito mb-4"><i class="bi bi-cart-check"></i> Ya tienes {{ en_carrito }} en tu <a href="{{ url_for('carrito') }}">carrito</a>.</p>
+      {% else %}<div class="mb-4"></div>{% endif %}
+      {% elif producto.stock > 0 %}
+      <button class="btn btn-outline-secondary btn-lg w-100 mt-4 mb-2" disabled><i class="bi bi-cart-check"></i> Ya tienes todas las unidades disponibles</button>
+      <p class="aviso-carrito mb-4">Puedes revisarlas en tu <a href="{{ url_for('carrito') }}">carrito</a>.</p>
       {% else %}
       <button class="btn btn-outline-secondary btn-lg w-100 my-4" disabled>Agotado</button>
       {% endif %}
@@ -111,8 +137,4 @@
   </section>
   {% endif %}
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/tienda.js') }}"></script>
 {% endblock %}

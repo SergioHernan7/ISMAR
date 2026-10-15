@@ -4,7 +4,8 @@
 <div class="acceso">
   <div class="card shadow-sm">
     <div class="card-body p-4">
-      <h1 class="h4 text-center mb-1"><i class="bi bi-lightning-charge-fill text-warning"></i> ISMAR</h1>
+      <img src="{{ url_for('static', filename='img/logo-256.png') }}" alt="" width="96" height="96" class="logo-circulo d-block mx-auto mb-2">
+      <h1 class="h4 text-center mb-1">ISMAR</h1>
       <p class="text-center text-muted mb-4">Panel de administrador</p>
       {% include 'admin/_mensajes.html' %}
       <form method="post">

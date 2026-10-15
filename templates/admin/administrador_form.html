@@ -7,6 +7,7 @@
 
 <div class="card border-0 shadow-sm" style="max-width: 640px">
   <div class="card-body">
+    <h2 class="titulo-tarjeta"><i class="bi bi-person-badge"></i> Datos de la cuenta</h2>
     <form method="post" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="mb-3">
@@ -25,8 +26,7 @@
         </div>
       </div>
 
-      <hr>
-      <h2 class="h6">{{ 'Cambiar contraseña' if editando else 'Contraseña' }}</h2>
+      <h3 class="subtitulo-tarjeta"><i class="bi bi-key"></i> {{ 'Cambiar contraseña' if editando else 'Contraseña' }}</h3>
       {% if editando %}<p class="small text-muted">Déjala en blanco para no cambiarla.</p>{% endif %}
       {% if es_yo %}
       <div class="mb-3">

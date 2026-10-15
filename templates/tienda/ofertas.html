@@ -1,0 +1,41 @@
+{% extends 'tienda/base.html' %}
+{% block titulo %}Ofertas{% endblock %}
+{% block descripcion %}Productos eléctricos con descuento en {{ tienda.nombre_tienda or 'ISMAR' }}. Haz tu pedido por WhatsApp.{% endblock %}
+{% block contenido %}
+
+{# El titular depende de los descuentos que el admin asigne en el panel (Ofertas):
+   si cambian o se quitan, esta página cambia sola #}
+<section class="portada portada-ofertas">
+  {% if productos %}<span class="ofertas-fantasma" aria-hidden="true">-{{ descuento_max }}%</span>{% endif %}
+  <div class="container py-5">
+    <span class="insignia"><i class="bi bi-tag-fill"></i>
+      {% if productos %}{{ productos|length }} producto{{ '' if productos|length == 1 else 's' }} con descuento{% else %}Sin ofertas activas por ahora{% endif %}
+    </span>
+    {% if productos %}
+    <h1 class="display-5 fw-bold mt-3 mb-2">Ofertas {{ tienda.nombre_tienda or 'ISMAR' }}</h1>
+    <p class="ofertas-titular mb-3">{{ 'Hasta ' if descuento_variable }}{{ descuento_max }}&nbsp;% de descuento</p>
+    <p class="lead texto-suave mb-4">Precios rebajados en productos seleccionados, hasta agotar existencias.</p>
+    <a href="#productos-oferta" class="btn btn-acento btn-lg"><i class="bi bi-arrow-down"></i> Ver las ofertas</a>
+    {% else %}
+    <h1 class="display-5 fw-bold mt-3 mb-2">Pronto, nuevas ofertas</h1>
+    <p class="lead texto-suave mb-4">Vuelve a revisar en unos días. Mientras tanto, mira todo nuestro catálogo.</p>
+    <a href="{{ url_for('catalogo') }}" class="btn btn-acento btn-lg"><i class="bi bi-grid"></i> Ver el catálogo</a>
+    {% endif %}
+  </div>
+</section>
+
+{% if productos %}
+<section class="container mt-5" id="productos-oferta">
+  <div class="d-flex justify-content-between align-items-end">
+    <h2 class="titulo-seccion">Productos en oferta</h2>
+    <span class="texto-suave small mb-3">{{ productos|length }} producto{{ '' if productos|length == 1 else 's' }}</span>
+  </div>
+  <div class="row g-3">
+    {% for p in productos %}
+    <div class="col-6 col-md-4 col-lg-3">{% include 'tienda/_producto_tarjeta.html' %}</div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

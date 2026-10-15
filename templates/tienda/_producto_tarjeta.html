@@ -6,19 +6,22 @@
     {% else %}
     <span class="sin-foto"><i class="bi bi-lightning-charge"></i></span>
     {% endif %}
-    {% if p.precio_oferta %}
-    <span class="etiqueta-oferta">-{{ ((1 - p.precio_oferta / p.precio) * 100)|round|int }}%</span>
+    {% if p.descuento %}
+    <span class="etiqueta-oferta">-{{ p.descuento }}%</span>
     {% endif %}
   </a>
   <div class="cuerpo">
-    {% if p.marca %}<div class="marca-producto">{{ p.marca }}</div>{% endif %}
+    {% if p.marca %}<div class="marca-producto">{{ p.marca }}</div>
+    {% elif p.categoria %}<div class="categoria-producto">{{ p.categoria }}</div>{% endif %}
     <h3 class="nombre"><a href="{{ url_for('producto_detalle', slug=p.slug) }}">{{ p.nombre }}</a></h3>
     {% if p.descripcion_corta %}<p class="descripcion">{{ p.descripcion_corta }}</p>{% endif %}
     <div class="precios mt-auto">
       <span class="precio">{{ p.precio_final|dinero }}</span>
-      {% if p.precio_oferta %}<span class="precio-anterior">{{ p.precio|dinero }}</span>{% endif %}
+      {% if p.descuento %}<span class="precio-anterior">{{ p.precio|dinero }}</span>{% endif %}
     </div>
-    {% if p.stock > 0 %}
+    {% if p.stock > 0 and carrito_items.get(p.id|string, 0) >= p.stock %}
+    <button class="btn btn-outline-secondary w-100" disabled title="Ya tienes en tu carrito todas las unidades disponibles"><i class="bi bi-cart-check"></i> En tu carrito</button>
+    {% elif p.stock > 0 %}
     <form method="post" action="{{ url_for('carrito_agregar') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="producto_id" value="{{ p.id }}">

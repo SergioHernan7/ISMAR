@@ -61,7 +61,7 @@ CREATE TABLE productos (
     descripcion_corta   VARCHAR(255) NULL,              -- la que sale en la tarjeta del catálogo
     descripcion         TEXT NULL,                      -- la completa, en la página del producto
     precio              DECIMAL(12,2) NOT NULL,
-    precio_oferta       DECIMAL(12,2) NULL,             -- si tiene valor, el producto está en oferta
+    descuento           TINYINT UNSIGNED NOT NULL DEFAULT 0, -- % de descuento (0 = sin oferta); lo asigna el admin en Ofertas
     stock               INT NOT NULL DEFAULT 0,
     imagen_principal    VARCHAR(255) NULL,
     destacado           TINYINT(1) NOT NULL DEFAULT 0,  -- para mostrarlo en la página de inicio
@@ -73,7 +73,8 @@ CREATE TABLE productos (
     CONSTRAINT fk_producto_marca FOREIGN KEY (marca_id)
         REFERENCES marcas(id) ON DELETE SET NULL,
     CONSTRAINT chk_precio CHECK (precio >= 0),
-    CONSTRAINT chk_stock  CHECK (stock >= 0)
+    CONSTRAINT chk_stock  CHECK (stock >= 0),
+    CONSTRAINT chk_descuento CHECK (descuento <= 90)
 ) ENGINE=InnoDB;
 
 CREATE INDEX idx_productos_categoria ON productos(categoria_id);
@@ -117,9 +118,11 @@ CREATE TABLE pedidos (
     cliente_direccion   VARCHAR(255) NULL,
     cliente_ciudad      VARCHAR(100) NULL,
     notas               TEXT NULL,
+    datos_autorizados_en DATETIME NULL,             -- cuándo autorizó el tratamiento de sus datos (Ley 1581)
     total               DECIMAL(12,2) NOT NULL,
     estado              ENUM('pendiente','confirmado','enviado','entregado','cancelado')
                         NOT NULL DEFAULT 'pendiente',
+    stock_descontado    TINYINT(1) NOT NULL DEFAULT 0,  -- 1 = sus unidades ya se restaron del inventario (al confirmarlo)
     creado_en           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     actualizado_en      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
@@ -133,7 +136,9 @@ CREATE TABLE pedido_detalle (
     pedido_id           INT NOT NULL,
     producto_id         INT NULL,
     nombre_producto     VARCHAR(150) NOT NULL,
-    precio_unitario     DECIMAL(12,2) NOT NULL,
+    precio_unitario     DECIMAL(12,2) NOT NULL,         -- lo que se cobró (ya con el descuento)
+    precio_lista        DECIMAL(12,2) NULL,             -- precio normal el día de la compra
+    descuento           TINYINT UNSIGNED NOT NULL DEFAULT 0, -- % de oferta que tenía el día de la compra
     cantidad            INT NOT NULL,
     subtotal            DECIMAL(12,2) NOT NULL,
     CONSTRAINT fk_detalle_pedido FOREIGN KEY (pedido_id)
@@ -161,7 +166,10 @@ INSERT INTO configuracion (clave, valor, descripcion) VALUES
 ('nombre_tienda',   'ISMAR',          'Nombre que aparece en la web'),
 ('whatsapp_numero', '57XXXXXXXXXX',   'Número de WhatsApp con código de país, sin + ni espacios'),
 ('moneda',          'COP',            'Moneda de los precios'),
-('mensaje_pedido',  'Hola, quiero finalizar mi pedido', 'Texto inicial del mensaje de WhatsApp');
+('mensaje_pedido',  'Hola, quiero finalizar mi pedido', 'Texto inicial del mensaje de WhatsApp'),
+('correo_contacto',  '', 'Correo para dudas y solicitudes sobre datos personales (sale en la política de privacidad)'),
+('nit',              '', 'NIT o cédula del responsable de la tienda (sale en la política de privacidad)'),
+('direccion_tienda', '', 'Dirección física de la tienda (opcional; sale en la política de privacidad)');
 
 -- Los productos, categorías y fotos del catálogo real están en
 -- database/catalogo.sql: impórtalo después de este archivo.

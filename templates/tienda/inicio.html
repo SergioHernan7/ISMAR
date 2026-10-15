@@ -1,10 +1,10 @@
 {% extends 'tienda/base.html' %}
-{% set iconos = {'iluminacion': 'lightbulb', 'tomas-e-interruptores': 'outlet', 'parte-electrica': 'plug',
-                 'duchas': 'droplet', 'otros': 'box-seam'} %}
 {% block titulo %}Material eléctrico{% endblock %}
+{% block og_titulo %}Eléctricos {{ (tienda.nombre_tienda or 'ISMAR')|title }} · Material eléctrico e iluminación{% endblock %}
 {% block contenido %}
 
 <section class="portada">
+  <i class="bi bi-lightning-charge-fill rayo-fondo d-none d-md-block" aria-hidden="true"></i>
   <div class="container py-5">
     <div class="row align-items-center g-4">
       <div class="col-lg-7">
@@ -14,7 +14,7 @@
           Arma tu pedido y lo terminamos juntos por WhatsApp.</p>
         <div class="d-flex flex-wrap gap-2">
           <a href="{{ url_for('catalogo') }}" class="btn btn-acento btn-lg">Ver catálogo</a>
-          <a href="{{ url_for('catalogo', ofertas=1) }}" class="btn btn-outline-light btn-lg"><i class="bi bi-tag"></i> Ofertas</a>
+          <a href="{{ url_for('ofertas') }}" class="btn btn-outline-light btn-lg"><i class="bi bi-tag"></i> Ofertas</a>
         </div>
       </div>
       <div class="col-lg-5 d-none d-lg-block">
@@ -24,6 +24,16 @@
           <div><i class="bi bi-whatsapp"></i><span><strong>3. Envía</strong> el pedido por WhatsApp</span></div>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="ventajas">
+  <div class="container py-3">
+    <div class="row g-3">
+      <div class="col-md-4 ventaja"><i class="bi bi-person-check"></i><div><strong>Sin registrarte</strong><span>Solo tu nombre y tu teléfono</span></div></div>
+      <div class="col-md-4 ventaja"><i class="bi bi-whatsapp"></i><div><strong>Atención por WhatsApp</strong><span>Te respondemos y confirmamos tu pedido</span></div></div>
+      <div class="col-md-4 ventaja"><i class="bi bi-truck"></i><div><strong>Pago y entrega a convenir</strong><span>Lo acordamos contigo directamente</span></div></div>
     </div>
   </div>
 </section>
@@ -38,7 +48,7 @@
         {% if c.imagen %}
         <img src="{{ url_for('static', filename=c.imagen) }}" alt="" loading="lazy">
         {% else %}
-        <span class="icono"><i class="bi bi-{{ iconos.get(c.slug, 'lightning-charge') }}"></i></span>
+        <span class="icono"><i class="bi bi-{{ iconos_categoria.get(c.slug, 'lightning-charge') }}"></i></span>
         {% endif %}
         <span class="nombre">{{ c.nombre }}</span>
       </a>
@@ -56,20 +66,6 @@
   </div>
   <div class="row g-3">
     {% for p in destacados %}
-    <div class="col-6 col-md-4 col-lg-3">{% include 'tienda/_producto_tarjeta.html' %}</div>
-    {% endfor %}
-  </div>
-</section>
-{% endif %}
-
-{% if ofertas %}
-<section class="container mt-5">
-  <div class="d-flex justify-content-between align-items-end">
-    <h2 class="titulo-seccion">Ofertas</h2>
-    <a href="{{ url_for('catalogo', ofertas=1) }}" class="ver-todo">Ver todas <i class="bi bi-arrow-right"></i></a>
-  </div>
-  <div class="row g-3">
-    {% for p in ofertas %}
     <div class="col-6 col-md-4 col-lg-3">{% include 'tienda/_producto_tarjeta.html' %}</div>
     {% endfor %}
   </div>

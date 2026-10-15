@@ -24,7 +24,8 @@
         <td class="text-nowrap">{{ p.creado_en.strftime('%d/%m/%Y %H:%M') }}</td>
         <td>{{ p.cliente_nombre }}</td>
         <td>{{ p.cliente_telefono }}</td>
-        <td>{{ p.total|dinero }}</td>
+        <td class="text-nowrap">{{ p.total|dinero }}
+          {% if p.ahorro %}<span class="badge badge-oferta ms-1" title="Se descontaron {{ p.ahorro|dinero }} por ofertas"><i class="bi bi-tag-fill"></i> Con descuento</span>{% endif %}</td>
         <td><span class="badge badge-estado-{{ p.estado }}">{{ p.estado|capitalize }}</span></td>
       </tr>
     {% else %}

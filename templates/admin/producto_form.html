@@ -15,7 +15,7 @@
     <div class="col-lg-8">
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-body">
-          <h2 class="h6 text-muted text-uppercase mb-3">Información básica</h2>
+          <h2 class="titulo-tarjeta"><i class="bi bi-info-circle"></i> Información básica</h2>
           <div class="row g-3">
             <div class="col-md-8">
               <label class="form-label">Nombre *</label>
@@ -39,7 +39,7 @@
 
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-body">
-          <h2 class="h6 text-muted text-uppercase mb-3">Especificaciones técnicas</h2>
+          <h2 class="titulo-tarjeta"><i class="bi bi-list-check"></i> Especificaciones técnicas</h2>
           <div id="specs">
             {% for e in especificaciones %}
             <div class="row g-2 mb-2 spec">
@@ -55,7 +55,7 @@
 
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-body">
-          <h2 class="h6 text-muted text-uppercase mb-3">Imágenes</h2>
+          <h2 class="titulo-tarjeta"><i class="bi bi-images"></i> Imágenes</h2>
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label">Imagen principal</label>
@@ -78,7 +78,7 @@
     <div class="col-lg-4">
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-body">
-          <h2 class="h6 text-muted text-uppercase mb-3">Organización</h2>
+          <h2 class="titulo-tarjeta"><i class="bi bi-folder2-open"></i> Organización</h2>
           <div class="mb-3">
             <label class="form-label">Categoría *</label>
             <select name="categoria_id" class="form-select" required>
@@ -110,7 +110,7 @@
 
       <div class="card border-0 shadow-sm mb-4">
         <div class="card-body">
-          <h2 class="h6 text-muted text-uppercase mb-3">Precio e inventario</h2>
+          <h2 class="titulo-tarjeta"><i class="bi bi-currency-dollar"></i> Precio e inventario</h2>
           <div class="mb-3">
             <label class="form-label">Precio *</label>
             <div class="input-group"><span class="input-group-text">$</span>
@@ -118,11 +118,15 @@
             </div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Precio de oferta</label>
-            <div class="input-group"><span class="input-group-text">$</span>
-              <input name="precio_oferta" type="number" min="0" step="any" class="form-control" value="{{ p.precio_oferta if p.precio_oferta is not none else '' }}">
+            <label class="form-label">Descuento (oferta)</label>
+            <div class="input-group">
+              <input name="descuento" type="number" min="0" max="{{ DESCUENTO_MAXIMO }}" step="1" class="form-control"
+                     value="{{ p.descuento or 0 }}" list="descuentos-sugeridos" data-descuento>
+              <span class="input-group-text">%</span>
             </div>
-            <div class="form-text">Déjalo vacío si no está en oferta.</div>
+            <datalist id="descuentos-sugeridos">{% for d in DESCUENTOS_SUGERIDOS %}<option value="{{ d }}"></option>{% endfor %}</datalist>
+            <div class="form-text">0 = sin oferta. Con descuento, el producto aparece en <strong>Ofertas</strong>.
+              <span class="precio-final-vivo" data-precio-final></span></div>
           </div>
           <div>
             <label class="form-label">Stock (unidades)</label>
@@ -139,7 +143,7 @@
 {% if imagenes %}
 <div class="card border-0 shadow-sm mt-4">
   <div class="card-body">
-    <h2 class="h6 text-muted text-uppercase mb-3">Galería actual</h2>
+    <h2 class="titulo-tarjeta"><i class="bi bi-grid-3x3-gap"></i> Galería actual</h2>
     <div class="d-flex flex-wrap gap-3 galeria">
       {% for img in imagenes %}
       <div class="position-relative">

@@ -6,9 +6,9 @@
   <a href="{{ url_for('admin_producto_form') }}" class="btn btn-dark"><i class="bi bi-plus-lg"></i> Nuevo producto</a>
 </div>
 
-<form class="row g-2 mb-3">
+<form class="row g-2 mb-3" data-sugerencias="{{ url_for('admin_productos_buscar') }}">
   <div class="col-sm-6 col-md-5">
-    <input name="q" value="{{ q }}" class="form-control" placeholder="Buscar por nombre o SKU">
+    <input name="q" value="{{ q }}" class="form-control" placeholder="Buscar por nombre, código, marca o categoría">
   </div>
   <div class="col-sm-4 col-md-3">
     <select name="categoria" class="form-select" onchange="this.form.submit()">
@@ -43,8 +43,9 @@
         </td>
         <td>{{ p.categoria }}</td>
         <td>
-          {% if p.precio_oferta %}
-            <span class="text-danger fw-semibold">{{ p.precio_oferta|dinero }}</span>
+          {% if p.descuento %}
+            <span class="fw-semibold">{{ p.precio|con_descuento(p.descuento)|dinero }}</span>
+            <span class="badge badge-oferta">-{{ p.descuento }}%</span>
             <div class="small text-muted text-decoration-line-through">{{ p.precio|dinero }}</div>
           {% else %}
             {{ p.precio|dinero }}

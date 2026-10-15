@@ -1,0 +1,99 @@
+{% extends 'admin/base.html' %}
+{% block titulo %}Ofertas{% endblock %}
+{% block contenido %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h1 class="h3 mb-0">Ofertas</h1>
+  <a href="{{ url_for('ofertas') }}" class="btn btn-outline-secondary"><i class="bi bi-shop"></i> Ver en la tienda</a>
+</div>
+<p class="text-muted mb-3">
+  {% if en_oferta %}
+  <strong class="text-body">{{ en_oferta }}</strong> producto{{ '' if en_oferta == 1 else 's' }} en oferta, hasta <strong class="text-body">{{ descuento_max }} %</strong> de descuento.
+  {% else %}
+  Todavía no hay productos en oferta.
+  {% endif %}
+  Escribe el porcentaje de descuento de cada producto (0 = sin oferta) y guarda. Los productos con descuento aparecen en la página de Ofertas de la tienda.
+</p>
+
+<form method="post" id="form-ofertas">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  {# Filtros (en el navegador, sin recargar) #}
+  <div class="row g-2 mb-3">
+    <div class="col-sm-6 col-md-5">
+      <input type="search" class="form-control" placeholder="Filtrar por nombre o código" data-filtro-texto>
+    </div>
+    <div class="col-sm-4 col-md-3">
+      <select class="form-select" data-filtro-categoria>
+        <option value="">Todas las categorías</option>
+        {% for c in categorias %}<option value="{{ c.nombre }}">{{ c.nombre }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-auto d-flex align-items-center">
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" id="solo-oferta" data-filtro-oferta>
+        <label class="form-check-label" for="solo-oferta">Solo en oferta</label>
+      </div>
+    </div>
+  </div>
+
+  {# Acciones con los productos marcados #}
+  <div class="barra-masiva mb-3" data-barra-masiva>
+    <span class="me-1"><strong data-cuenta-marcados>0</strong> marcados</span>
+    <div class="input-group input-group-sm" style="width: 130px">
+      <input type="number" class="form-control" min="1" max="{{ DESCUENTO_MAXIMO }}" step="1" placeholder="15" list="descuentos-sugeridos" data-descuento-masivo aria-label="Descuento para los marcados">
+      <span class="input-group-text">%</span>
+    </div>
+    <button type="button" class="btn btn-sm btn-dark" data-aplicar-masivo><i class="bi bi-tag"></i> Poner descuento</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-quitar-masivo><i class="bi bi-x-lg"></i> Quitar oferta</button>
+  </div>
+  <datalist id="descuentos-sugeridos">{% for d in DESCUENTOS_SUGERIDOS %}<option value="{{ d }}"></option>{% endfor %}</datalist>
+
+  <div class="tabla-card table-responsive">
+    <table class="table table-hover align-middle tabla-ofertas">
+      <thead>
+        <tr>
+          <th style="width: 36px"><input type="checkbox" class="form-check-input" data-marcar-todos aria-label="Marcar todos los visibles"></th>
+          <th></th><th>Producto</th><th>Precio</th><th style="width: 130px">Descuento</th><th>Precio final</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in productos %}
+        <tr data-fila-oferta data-texto="{{ (p.nombre ~ ' ' ~ p.sku)|lower }}" data-categoria="{{ p.categoria }}"
+            class="{{ 'fila-en-oferta' if p.descuento }}">
+          <td><input type="checkbox" class="form-check-input" data-marcar aria-label="Marcar {{ p.nombre }}"></td>
+          <td>
+            {% if p.imagen_principal %}<img src="{{ url_for('static', filename=p.imagen_principal) }}" class="miniatura" alt="">
+            {% else %}<span class="miniatura miniatura-vacia"><i class="bi bi-image"></i></span>{% endif %}
+          </td>
+          <td class="min-w-0">
+            <a href="{{ url_for('admin_producto_form', id=p.id) }}" class="fw-semibold">{{ p.nombre }}</a>
+            {% if not p.activo %}<span class="badge text-bg-secondary ms-1">Oculto</span>{% endif %}
+            <div class="small text-muted">{{ p.sku }} · {{ p.categoria }}</div>
+          </td>
+          <td class="text-nowrap">{{ p.precio|dinero }}</td>
+          <td>
+            <div class="input-group input-group-sm">
+              <input type="number" name="descuento_{{ p.id }}" value="{{ p.descuento }}" min="0" max="{{ DESCUENTO_MAXIMO }}" step="1"
+                     class="form-control" list="descuentos-sugeridos" data-descuento data-precio="{{ p.precio }}" data-original="{{ p.descuento }}"
+                     aria-label="Descuento de {{ p.nombre }}">
+              <span class="input-group-text">%</span>
+            </div>
+          </td>
+          <td class="text-nowrap fw-semibold" data-precio-final></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="text-center text-muted py-4 mb-0 d-none" data-sin-resultados>No hay productos con ese filtro.</p>
+  </div>
+
+  {# Aparece cuando hay cambios sin guardar #}
+  <div class="barra-guardar" data-barra-guardar hidden>
+    <span><i class="bi bi-pencil-square"></i> <strong data-cuenta-cambios>0</strong> cambio(s) sin guardar</span>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-sm btn-outline-light" data-deshacer>Deshacer</button>
+      <button class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Guardar cambios</button>
+    </div>
+  </div>
+</form>
+{% endblock %}
