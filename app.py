@@ -1475,24 +1475,34 @@ def pedido_gracias(codigo):
     detalle = consultar('SELECT * FROM pedido_detalle WHERE pedido_id = %s', (pedido['id'],))
     tienda = config_tienda()
 
-    lineas = [tienda.get('mensaje_pedido', 'Hola, quiero finalizar mi pedido'), '',
-              f'*Pedido {pedido["codigo"]}*']
+    saludo = (tienda.get('mensaje_pedido') or 'Hola, quiero finalizar mi pedido').strip()
+    if saludo[-1] not in '.!?:':
+        saludo += '.'
+    lineas = [saludo, '', f'*Pedido {pedido["codigo"]}*', '', '*Productos*']
     ahorro = 0
     for d in detalle:
-        oferta = f' (oferta -{d["descuento"]}%)' if d['descuento'] else ''
-        lineas.append(f'• {d["cantidad"]} x {d["nombre_producto"]}{oferta} — {formato_dinero(d["subtotal"])}')
+        lineas.append(f'• {d["cantidad"]} x {d["nombre_producto"]}')
+        # Debajo de cada producto: precio unitario si son varios y el descuento si tiene
+        precio = formato_dinero(d['subtotal'])
+        if d['cantidad'] > 1:
+            precio = f'{formato_dinero(d["precio_unitario"])} c/u = {precio}'
         if d['descuento']:
+            precio += f' (oferta -{d["descuento"]} %)'
             ahorro += (d['precio_lista'] - d['precio_unitario']) * d['cantidad']
+        lineas.append(f'   {precio}')
+    lineas.append('')
     if ahorro:
-        lineas.append(f'Descuento por ofertas: -{formato_dinero(ahorro)}')
+        lineas.append(f'Ahorro por ofertas: -{formato_dinero(ahorro)}')
     lineas += [f'*Total: {formato_dinero(pedido["total"])}*', '',
+               '*Datos de entrega*',
                f'Nombre: {pedido["cliente_nombre"]}', f'Teléfono: {pedido["cliente_telefono"]}']
     if pedido['cliente_ciudad']:
         lineas.append(f'Ciudad: {pedido["cliente_ciudad"]}')
     if pedido['cliente_direccion']:
         lineas.append(f'Dirección: {pedido["cliente_direccion"]}')
     if pedido['notas']:
-        lineas.append(f'Notas: {pedido["notas"]}')
+        lineas += ['', f'*Notas:* {pedido["notas"]}']
+    lineas += ['', 'Quedo pendiente de la confirmación. ¡Gracias!']
     whatsapp = enlace_whatsapp(tienda.get('whatsapp_numero'), '\n'.join(lineas))
 
     return render_template('tienda/gracias.html', pedido=pedido, detalle=detalle, whatsapp=whatsapp, ahorro=ahorro)
