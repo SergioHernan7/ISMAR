@@ -34,7 +34,8 @@ app.config.update(
 )
 
 EXTENSIONES_IMAGEN = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
-ESTADOS_PEDIDO = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado']
+ESTADOS_PEDIDO = ['pendiente', 'vendido', 'cancelado']
+DIAS_PEDIDO_PENDIENTE = 7  # un pedido pendiente sin cambios en estos días se cancela solo
 STOCK_BAJO = 5
 # Ofertas: porcentaje de descuento por producto (0 = sin oferta), como en UrbanStyle
 DESCUENTO_MAXIMO = 90
@@ -194,7 +195,9 @@ def asegurar_esquema():
     """Pone al día las bases creadas antes de las ofertas (lo mismo que database/migraciones/):
     001: productos.precio_oferta (precio fijo) -> productos.descuento (%)
     002: pedido_detalle guarda precio_lista y descuento del día de la compra
-    003: pedidos.stock_descontado (el stock se descuenta al confirmar un pedido)"""
+    003: pedidos.stock_descontado (el stock se descuenta al confirmar un pedido)
+    004: datos personales (Ley 1581)
+    005: estados de pedido pendiente / vendido / cancelado"""
     asegurar_columna_descuento()
     asegurar_descuento_en_pedidos()
     asegurar_datos_personales()
@@ -202,6 +205,20 @@ def asegurar_esquema():
         ejecutar("ALTER TABLE pedidos ADD COLUMN stock_descontado TINYINT(1) NOT NULL DEFAULT 0 "
                  "COMMENT '1 = sus unidades ya se restaron del inventario' AFTER estado")
         app.logger.warning('Base actualizada: pedidos.stock_descontado')
+    asegurar_estados_pedido()
+
+
+def asegurar_estados_pedido():
+    """005: confirmado, enviado y entregado pasan a ser un solo estado, vendido."""
+    fila = consultar("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+                     "AND TABLE_NAME = 'pedidos' AND COLUMN_NAME = 'estado'", uno=True)
+    if not fila or 'confirmado' not in str(fila['COLUMN_TYPE']):
+        return
+    ejecutar("ALTER TABLE pedidos MODIFY estado ENUM('pendiente','confirmado','enviado','entregado','vendido','cancelado') "
+             "NOT NULL DEFAULT 'pendiente'")
+    ejecutar("UPDATE pedidos SET estado = 'vendido' WHERE estado IN ('confirmado', 'enviado', 'entregado')")
+    ejecutar("ALTER TABLE pedidos MODIFY estado ENUM('pendiente','vendido','cancelado') NOT NULL DEFAULT 'pendiente'")
+    app.logger.warning('Base actualizada: estados de pedido pendiente / vendido / cancelado')
 
 
 CONFIGURACION_DATOS_PERSONALES = [
@@ -303,6 +320,16 @@ def verificar_csrf():
             if request.headers.get('X-Carrito') == '1':
                 return jsonify(destino=destino)
             return redirect(destino)
+
+
+@app.before_request
+def cancelar_pedidos_olvidados():
+    """Al usar el panel, los pedidos que siguen pendientes y nadie tocó en DIAS_PEDIDO_PENDIENTE días
+    se cancelan solos (el cliente no terminó la compra por WhatsApp). Un pendiente nunca tiene
+    stock descontado, así que el inventario no cambia. Si se vuelve a pasar a pendiente, cuenta de nuevo."""
+    if request.method == 'GET' and request.path.startswith('/admin') and 'admin_id' in session:
+        ejecutar("UPDATE pedidos SET estado = 'cancelado' WHERE estado = 'pendiente' AND stock_descontado = 0 "
+                 "AND actualizado_en < NOW() - INTERVAL %s DAY", (DIAS_PEDIDO_PENDIENTE,))
 
 
 @app.context_processor
@@ -438,14 +465,16 @@ def admin_dashboard():
           (SELECT COUNT(*) FROM categorias WHERE activa = 1)               AS categorias,
           (SELECT COUNT(*) FROM pedidos WHERE estado = 'pendiente')        AS pedidos_pendientes,
           (SELECT COALESCE(SUM(total), 0) FROM pedidos
-             WHERE estado IN ('confirmado', 'enviado', 'entregado')
+             WHERE estado = 'vendido'
                AND creado_en >= DATE_FORMAT(CURDATE(), '%%Y-%%m-01'))        AS ventas_mes
     ''', (STOCK_BAJO,), uno=True)
     ultimos_pedidos = consultar(SQL_PEDIDOS + ' ORDER BY pe.creado_en DESC LIMIT 5')
     poco_stock = consultar('SELECT id, nombre, stock FROM productos '
                            'WHERE activo = 1 AND stock <= %s ORDER BY stock LIMIT 5', (STOCK_BAJO,))
-    return render_template('admin/dashboard.html', stats=stats,
-                           ultimos_pedidos=ultimos_pedidos, poco_stock=poco_stock)
+    ocultos = consultar('SELECT id, nombre FROM productos WHERE activo = 0 ORDER BY actualizado_en DESC LIMIT 5')
+    total_ocultos = consultar('SELECT COUNT(*) AS n FROM productos WHERE activo = 0', uno=True)['n']
+    return render_template('admin/dashboard.html', stats=stats, ultimos_pedidos=ultimos_pedidos,
+                           poco_stock=poco_stock, ocultos=ocultos, total_ocultos=total_ocultos)
 
 
 # =====================================================
@@ -472,7 +501,7 @@ SQL_PRODUCTOS_ADMIN = '''SELECT p.*, c.nombre AS categoria, m.nombre AS marca
              WHERE 1 = 1'''
 
 
-def filtros_admin_productos(q, categoria):
+def filtros_admin_productos(q, categoria, solo_ocultos=False):
     """Filtros del listado de productos del panel (incluye los ocultos)."""
     filtros, params = '', []
     if q:
@@ -480,6 +509,8 @@ def filtros_admin_productos(q, categoria):
     if categoria:
         filtros += ' AND (p.categoria_id = %s OR c.categoria_padre_id = %s)'
         params += [categoria, categoria]
+    if solo_ocultos:
+        filtros += ' AND p.activo = 0'
     return filtros, params
 
 
@@ -488,11 +519,12 @@ def filtros_admin_productos(q, categoria):
 def admin_productos():
     q = request.args.get('q', '').strip()
     categoria = request.args.get('categoria', type=int)
-    filtros, params = filtros_admin_productos(q, categoria)
+    solo_ocultos = request.args.get('ocultos') == '1'
+    filtros, params = filtros_admin_productos(q, categoria, solo_ocultos)
     productos = consultar(SQL_PRODUCTOS_ADMIN + filtros + ' ORDER BY p.creado_en DESC', params)
     categorias = consultar('SELECT id, nombre FROM categorias ORDER BY nombre')
     return render_template('admin/productos.html', productos=productos, categorias=categorias,
-                           q=q, categoria=categoria, STOCK_BAJO=STOCK_BAJO)
+                           q=q, categoria=categoria, solo_ocultos=solo_ocultos, STOCK_BAJO=STOCK_BAJO)
 
 
 @app.route('/admin/productos/buscar')
@@ -855,11 +887,43 @@ def admin_pedidos():
         pedidos = consultar(SQL_PEDIDOS + ' ORDER BY pe.creado_en DESC')
     conteo = {f['estado']: f['n'] for f in
               consultar('SELECT estado, COUNT(*) AS n FROM pedidos GROUP BY estado')}
-    return render_template('admin/pedidos.html', pedidos=pedidos, estado=estado, conteo=conteo)
+    return render_template('admin/pedidos.html', pedidos=pedidos, estado=estado, conteo=conteo,
+                           dias_pendiente=DIAS_PEDIDO_PENDIENTE)
 
 
-# En estos estados las unidades del pedido ya salieron del inventario
-ESTADOS_CON_STOCK_DESCONTADO = {'confirmado', 'enviado', 'entregado'}
+@app.route('/admin/pedidos/estado', methods=['POST'])
+@login_requerido
+def admin_pedidos_estado():
+    """Cambia el estado desde la lista: el botón de una fila (solo = "id:estado") o los pedidos marcados."""
+    if request.form.get('solo'):
+        id_texto, _, nuevo = request.form['solo'].partition(':')
+        ids = [id_texto]
+    else:
+        ids, nuevo = request.form.getlist('ids'), request.form.get('estado')
+    ids = [int(i) for i in ids if i.isdigit()]
+    volver = redirect(pagina_anterior(url_for('admin_pedidos')))
+    if nuevo not in ESTADOS_PEDIDO or not ids:
+        flash('Marca al menos un pedido.', 'warning')
+        return volver
+    pedidos = consultar(f'SELECT * FROM pedidos WHERE id IN ({", ".join(["%s"] * len(ids))})', ids)
+    cambiados = 0
+    for pedido in pedidos:
+        if pedido['estado'] == nuevo:
+            continue
+        ok, mensaje = cambiar_estado_pedido(pedido, nuevo)
+        if ok:
+            cambiados += 1
+            if len(pedidos) == 1:
+                flash(f'{pedido["codigo"]}: {mensaje}', 'success')
+        else:
+            flash(f'{pedido["codigo"]}: {mensaje}', 'danger')
+    if len(pedidos) > 1 and cambiados:
+        flash(f'{cambiados} pedido(s) marcados como {nuevo}.', 'success')
+    return volver
+
+
+# En este estado las unidades del pedido ya salieron del inventario
+ESTADOS_CON_STOCK_DESCONTADO = {'vendido'}
 
 
 def mover_stock_pedido(cur, pedido_id, signo):
@@ -890,7 +954,7 @@ def mover_stock_pedido(cur, pedido_id, signo):
 
 
 def cambiar_estado_pedido(pedido, nuevo):
-    """Cambia el estado y mueve el inventario: al confirmar (o enviar/entregar) se restan las unidades;
+    """Cambia el estado y mueve el inventario: al marcarlo vendido se restan las unidades;
     si vuelve a pendiente o se cancela, se devuelven. Devuelve (ok, mensaje)."""
     descontar = nuevo in ESTADOS_CON_STOCK_DESCONTADO
     con = get_connection()
@@ -1209,8 +1273,11 @@ def variables_tienda():
 
 @app.route('/')
 def inicio():
-    categorias = consultar('SELECT * FROM categorias WHERE activa = 1 AND categoria_padre_id IS NULL '
-                           'ORDER BY orden, nombre')
+    # Cada categoría con cuántos productos visibles tiene (contando sus subcategorías)
+    categorias = consultar('''SELECT c.*,
+        (SELECT COUNT(*) FROM productos p LEFT JOIN categorias s ON s.id = p.categoria_id
+          WHERE p.activo = 1 AND (p.categoria_id = c.id OR s.categoria_padre_id = c.id)) AS num_productos
+        FROM categorias c WHERE c.activa = 1 AND c.categoria_padre_id IS NULL ORDER BY c.orden, c.nombre''')
     destacados = consultar(SQL_PRODUCTOS_PUBLICOS + ' AND p.destacado = 1 ORDER BY p.creado_en DESC LIMIT 8')
     titulo_destacados = 'Productos destacados'
     if not destacados:

@@ -74,6 +74,26 @@
         </tbody>
       </table>
     </div>
+
+    {# Productos que no se ven en la tienda (visibilidad apagada) #}
+    <div class="d-flex justify-content-between align-items-center mb-2 mt-4">
+      <h2 class="h5 mb-0">Productos ocultos <span class="badge text-bg-secondary align-middle">{{ total_ocultos }}</span></h2>
+      {% if total_ocultos > ocultos|length %}<a href="{{ url_for('admin_productos', ocultos=1) }}" class="small">Ver todos</a>{% endif %}
+    </div>
+    <div class="tabla-card table-responsive">
+      <table class="table align-middle">
+        <tbody>
+        {% for p in ocultos %}
+          <tr>
+            <td><a href="{{ url_for('admin_producto_form', id=p.id) }}">{{ p.nombre }}</a></td>
+            <td class="text-end"><span class="badge text-bg-secondary"><i class="bi bi-eye-slash"></i> Oculto</span></td>
+          </tr>
+        {% else %}
+          <tr><td class="text-center text-muted py-4">Todos los productos se ven en la tienda.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endblock %}

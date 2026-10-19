@@ -110,3 +110,26 @@ document.querySelectorAll('input[data-descuento]').forEach(function (input) {
   });
   actualizarMarcas();
 })();
+
+// Lista de pedidos: marcar varios y cambiarles el estado de una vez
+(function () {
+  var form = document.getElementById('form-pedidos');
+  if (!form) return;
+  var casillas = Array.prototype.slice.call(form.querySelectorAll('[data-marcar]'));
+  var marcarTodos = form.querySelector('[data-marcar-todos]');
+
+  function actualizar() {
+    var n = casillas.filter(function (c) { return c.checked; }).length;
+    form.querySelector('[data-cuenta-marcados]').textContent = n;
+    form.querySelector('[data-barra-masiva]').classList.toggle('activa', n > 0);
+    form.querySelectorAll('[data-accion-masiva]').forEach(function (b) { b.disabled = n === 0; });
+    marcarTodos.checked = casillas.length > 0 && n === casillas.length;
+  }
+
+  marcarTodos.addEventListener('change', function () {
+    casillas.forEach(function (c) { c.checked = marcarTodos.checked; });
+    actualizar();
+  });
+  casillas.forEach(function (c) { c.addEventListener('change', actualizar); });
+  actualizar();
+})();

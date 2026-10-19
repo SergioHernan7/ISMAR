@@ -5,45 +5,51 @@
 
 <section class="portada">
   <i class="bi bi-lightning-charge-fill rayo-fondo d-none d-md-block" aria-hidden="true"></i>
-  <div class="container py-5">
-    <div class="row align-items-center g-4">
+  <div class="container portada-contenido">
+    <div class="row align-items-center g-4 g-lg-5">
       <div class="col-lg-7">
         <span class="insignia"><i class="bi bi-lightning-charge-fill"></i> Material eléctrico</span>
-        <h1 class="display-5 fw-bold mt-3">Todo para tus instalaciones eléctricas, en un solo lugar</h1>
-        <p class="lead texto-suave mb-4">Iluminación LED, tomas e interruptores, tubería, cajas, tableros y duchas.
+        <h1 class="display-5 fw-bold mt-3">Todo para tus instalaciones eléctricas, <span class="resaltado">en un solo lugar</span></h1>
+        {# En celular solo sale la segunda frase, para que la portada no se vea cargada #}
+        <p class="lead texto-suave mb-4"><span class="d-none d-md-inline">Iluminación LED, tomas e interruptores, tubería, cajas, tableros y duchas.</span>
           Arma tu pedido y lo terminamos juntos por WhatsApp.</p>
         <div class="d-flex flex-wrap gap-2">
-          <a href="{{ url_for('catalogo') }}" class="btn btn-acento btn-lg">Ver catálogo</a>
+          <a href="{{ url_for('catalogo') }}" class="btn btn-acento btn-lg">Ver catálogo <i class="bi bi-arrow-right"></i></a>
           <a href="{{ url_for('ofertas') }}" class="btn btn-outline-light btn-lg"><i class="bi bi-tag"></i> Ofertas</a>
         </div>
       </div>
       <div class="col-lg-5 d-none d-lg-block">
-        <div class="pasos">
-          <div><i class="bi bi-search"></i><span><strong>1. Elige</strong> tus productos</span></div>
-          <div><i class="bi bi-cart-check"></i><span><strong>2. Arma</strong> tu carrito</span></div>
-          <div><i class="bi bi-whatsapp"></i><span><strong>3. Envía</strong> el pedido por WhatsApp</span></div>
+        {# Tarjeta de vidrio con los pasos para comprar #}
+        <div class="tarjeta-pasos">
+          <span class="tarjeta-pasos-titulo">Pedir es así de fácil</span>
+          <ol>
+            <li><span class="paso-icono"><i class="bi bi-search"></i></span><div><strong>Elige tus productos</strong><small>Busca o navega por categorías</small></div></li>
+            <li><span class="paso-icono"><i class="bi bi-cart-check"></i></span><div><strong>Arma tu carrito</strong><small>Solo tu nombre y tu teléfono</small></div></li>
+            <li><span class="paso-icono paso-whatsapp"><i class="bi bi-whatsapp"></i></span><div><strong>Envíalo por WhatsApp</strong><small>Acordamos el pago y la entrega</small></div></li>
+          </ol>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<section class="ventajas">
-  <div class="container py-3">
-    <div class="row g-3">
-      <div class="col-md-4 ventaja"><i class="bi bi-person-check"></i><div><strong>Sin registrarte</strong><span>Solo tu nombre y tu teléfono</span></div></div>
-      <div class="col-md-4 ventaja"><i class="bi bi-whatsapp"></i><div><strong>Atención por WhatsApp</strong><span>Te respondemos y confirmamos tu pedido</span></div></div>
-      <div class="col-md-4 ventaja"><i class="bi bi-truck"></i><div><strong>Pago y entrega a convenir</strong><span>Lo acordamos contigo directamente</span></div></div>
-    </div>
+{# Ventajas: tarjetas que flotan sobre el borde de la portada #}
+<section class="container ventajas">
+  <div class="row g-2 g-md-3">
+    <div class="col-md-4"><div class="ventaja"><i class="bi bi-person-check"></i><div><strong>Sin registrarte</strong><span>Solo tu nombre y tu teléfono</span></div></div></div>
+    <div class="col-md-4"><div class="ventaja"><i class="bi bi-whatsapp"></i><div><strong>Atención por WhatsApp</strong><span>Te respondemos y confirmamos tu pedido</span></div></div></div>
+    <div class="col-md-4"><div class="ventaja"><i class="bi bi-truck"></i><div><strong>Pago y entrega a convenir</strong><span>Lo acordamos contigo directamente</span></div></div></div>
   </div>
 </section>
 
 {% if categorias %}
-<section class="container mt-5">
-  <h2 class="titulo-seccion">Categorías</h2>
-  <div class="row g-3">
+<section class="container seccion">
+  <div class="encabezado-seccion">
+    <div><span class="antetitulo">Explora</span><h2 class="titulo-seccion">Categorías</h2></div>
+  </div>
+  <div class="row g-2 g-md-3">
     {% for c in categorias %}
-    <div class="col-6 col-md-4 col-lg">
+    <div class="col-4 col-lg">
       <a href="{{ url_for('catalogo', slug=c.slug) }}" class="tarjeta-categoria">
         {% if c.imagen %}
         <img src="{{ url_for('static', filename=c.imagen) }}" alt="" loading="lazy">
@@ -51,6 +57,7 @@
         <span class="icono"><i class="bi bi-{{ iconos_categoria.get(c.slug, 'lightning-charge') }}"></i></span>
         {% endif %}
         <span class="nombre">{{ c.nombre }}</span>
+        <span class="cantidad">{{ c.num_productos }} producto{{ 's' if c.num_productos != 1 }}</span>
       </a>
     </div>
     {% endfor %}
@@ -59,12 +66,12 @@
 {% endif %}
 
 {% if destacados %}
-<section class="container mt-5">
-  <div class="d-flex justify-content-between align-items-end">
-    <h2 class="titulo-seccion">{{ titulo_destacados }}</h2>
+<section class="container seccion">
+  <div class="encabezado-seccion">
+    <div><span class="antetitulo">Catálogo</span><h2 class="titulo-seccion">{{ titulo_destacados }}</h2></div>
     <a href="{{ url_for('catalogo') }}" class="ver-todo">Ver todo <i class="bi bi-arrow-right"></i></a>
   </div>
-  <div class="row g-3">
+  <div class="row g-2 g-md-3">
     {% for p in destacados %}
     <div class="col-6 col-md-4 col-lg-3">{% include 'tienda/_producto_tarjeta.html' %}</div>
     {% endfor %}
@@ -73,14 +80,18 @@
 {% endif %}
 
 {% if marcas %}
-<section class="container mt-5">
-  <h2 class="titulo-seccion">Nuestras marcas</h2>
-  <div class="d-flex flex-wrap gap-2">
-    {% for m in marcas %}
-    <a href="{{ url_for('catalogo', marca=m.id) }}" class="chip-marca">
-      {% if m.logo %}<img src="{{ url_for('static', filename=m.logo) }}" alt="{{ m.nombre }}">{% else %}{{ m.nombre }}{% endif %}
-    </a>
-    {% endfor %}
+<section class="container seccion">
+  <div class="franja-marcas">
+    <div class="encabezado-seccion">
+      <div><span class="antetitulo">Trabajamos con</span><h2 class="titulo-seccion">Nuestras marcas</h2></div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for m in marcas %}
+      <a href="{{ url_for('catalogo', marca=m.id) }}" class="chip-marca">
+        {% if m.logo %}<img src="{{ url_for('static', filename=m.logo) }}" alt="{{ m.nombre }}">{% else %}{{ m.nombre }}{% endif %}
+      </a>
+      {% endfor %}
+    </div>
   </div>
 </section>
 {% endif %}

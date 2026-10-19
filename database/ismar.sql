@@ -120,9 +120,9 @@ CREATE TABLE pedidos (
     notas               TEXT NULL,
     datos_autorizados_en DATETIME NULL,             -- cuándo autorizó el tratamiento de sus datos (Ley 1581)
     total               DECIMAL(12,2) NOT NULL,
-    estado              ENUM('pendiente','confirmado','enviado','entregado','cancelado')
+    estado              ENUM('pendiente','vendido','cancelado')
                         NOT NULL DEFAULT 'pendiente',
-    stock_descontado    TINYINT(1) NOT NULL DEFAULT 0,  -- 1 = sus unidades ya se restaron del inventario (al confirmarlo)
+    stock_descontado    TINYINT(1) NOT NULL DEFAULT 0,  -- 1 = sus unidades ya se restaron del inventario (al marcarlo vendido)
     creado_en           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     actualizado_en      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
