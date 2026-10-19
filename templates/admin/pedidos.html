@@ -3,7 +3,7 @@
 {% block contenido %}
 <h1 class="h3 mb-3">Pedidos</h1>
 
-<ul class="nav nav-pills mb-3 flex-wrap">
+<ul class="nav nav-pills mb-2 flex-wrap">
   <li class="nav-item"><a class="nav-link {{ 'active' if not estado }}" href="{{ url_for('admin_pedidos') }}">Todos</a></li>
   {% for e in ESTADOS_PEDIDO %}
   <li class="nav-item">
@@ -13,25 +13,48 @@
   </li>
   {% endfor %}
 </ul>
+<p class="small text-muted mb-3"><i class="bi bi-info-circle"></i> Cuando cierres la venta por WhatsApp, márcalo como
+  <strong>vendido</strong> (se descuenta del inventario). Los pendientes que nadie toque en {{ dias_pendiente }} días se cancelan solos.</p>
 
-<div class="tabla-card table-responsive">
-  <table class="table table-hover align-middle">
-    <thead><tr><th>Código</th><th>Fecha</th><th>Cliente</th><th>Teléfono</th><th>Total</th><th>Estado</th></tr></thead>
-    <tbody>
-    {% for p in pedidos %}
-      <tr onclick="location='{{ url_for('admin_pedido', id=p.id) }}'" role="button">
-        <td class="fw-semibold">{{ p.codigo }}</td>
-        <td class="text-nowrap">{{ p.creado_en.strftime('%d/%m/%Y %H:%M') }}</td>
-        <td>{{ p.cliente_nombre }}</td>
-        <td>{{ p.cliente_telefono }}</td>
-        <td class="text-nowrap">{{ p.total|dinero }}
-          {% if p.ahorro %}<span class="badge badge-oferta ms-1" title="Se descontaron {{ p.ahorro|dinero }} por ofertas"><i class="bi bi-tag-fill"></i> Con descuento</span>{% endif %}</td>
-        <td><span class="badge badge-estado-{{ p.estado }}">{{ p.estado|capitalize }}</span></td>
-      </tr>
-    {% else %}
-      <tr><td colspan="6" class="text-center text-muted py-5">No hay pedidos{{ ' en este estado' if estado }}.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
+<form method="post" action="{{ url_for('admin_pedidos_estado') }}" id="form-pedidos">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  {# Acciones con los pedidos marcados #}
+  <div class="barra-masiva mb-3" data-barra-masiva>
+    <span class="me-1"><strong data-cuenta-marcados>0</strong> marcados</span>
+    <button class="btn btn-sm btn-dark" name="estado" value="vendido" data-accion-masiva disabled><i class="bi bi-check-lg"></i> Marcar vendidos</button>
+    <button class="btn btn-sm btn-outline-secondary" name="estado" value="cancelado" data-accion-masiva disabled><i class="bi bi-x-lg"></i> Cancelar</button>
+  </div>
+
+  <div class="tabla-card table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr>
+        <th style="width: 36px"><input type="checkbox" class="form-check-input" data-marcar-todos aria-label="Marcar todos"></th>
+        <th>Código</th><th>Fecha</th><th>Cliente</th><th>Teléfono</th><th>Total</th><th>Estado</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for p in pedidos %}
+        <tr onclick="location='{{ url_for('admin_pedido', id=p.id) }}'" role="button">
+          <td onclick="event.stopPropagation()"><input type="checkbox" class="form-check-input" name="ids" value="{{ p.id }}" data-marcar aria-label="Marcar {{ p.codigo }}"></td>
+          <td class="fw-semibold">{{ p.codigo }}</td>
+          <td class="text-nowrap">{{ p.creado_en.strftime('%d/%m/%Y %H:%M') }}</td>
+          <td>{{ p.cliente_nombre }}</td>
+          <td>{{ p.cliente_telefono }}</td>
+          <td class="text-nowrap">{{ p.total|dinero }}
+            {% if p.ahorro %}<span class="badge badge-oferta ms-1" title="Se descontaron {{ p.ahorro|dinero }} por ofertas"><i class="bi bi-tag-fill"></i> Con descuento</span>{% endif %}</td>
+          <td><span class="badge badge-estado-{{ p.estado }}">{{ p.estado|capitalize }}</span></td>
+          <td class="text-nowrap text-end" onclick="event.stopPropagation()">
+            {% if p.estado == 'pendiente' %}
+            <button class="btn btn-sm btn-dark" name="solo" value="{{ p.id }}:vendido" title="Marcar como vendido"><i class="bi bi-check-lg"></i> Vendido</button>
+            <button class="btn btn-sm btn-outline-secondary" name="solo" value="{{ p.id }}:cancelado" title="Cancelar pedido" aria-label="Cancelar {{ p.codigo }}"><i class="bi bi-x-lg"></i></button>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-5">No hay pedidos{{ ' en este estado' if estado }}.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</form>
 {% endblock %}

@@ -191,9 +191,7 @@ a:hover { color: var(--acento-texto); }
 
 /* estados de pedido: tonos apagados que combinan con la paleta, pero distinguibles */
 .badge-estado-pendiente  { background: var(--acento); color: var(--oscuro); }
-.badge-estado-confirmado { background: #4f6d8a; }
-.badge-estado-enviado    { background: #7a5c99; }
-.badge-estado-entregado  { background: #3f7d58; }
+.badge-estado-vendido    { background: #3f7d58; }
 .badge-estado-cancelado  { background: #8a8580; }
 
 /* Logo redondo de la tienda (menú lateral y login) */
