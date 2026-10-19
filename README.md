@@ -17,6 +17,11 @@ Tienda en línea de productos eléctricos con panel de administrador. Los pedido
    ```
 5. Abre http://127.0.0.1:5000/admin — la primera vez te pedirá crear el administrador.
 
+## Publicar en internet
+
+Los pasos para subir la tienda a PythonAnywhere están en [PUBLICAR.md](PUBLICAR.md). Los archivos de ayuda
+(arranque del servidor, importar la base y respaldos) están en `deploy/`.
+
 ## Ramas
 
 Cada tarea se trabaja en su propia rama creada desde `main` y se une con un pull request.
