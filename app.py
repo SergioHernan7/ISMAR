@@ -9,6 +9,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import wraps
 from urllib.parse import quote
 
+import click
 import mysql.connector
 from PIL import Image, ImageOps, UnidentifiedImageError
 from flask import (Flask, abort, flash, jsonify, redirect, render_template, request,
@@ -197,7 +198,8 @@ def asegurar_esquema():
     002: pedido_detalle guarda precio_lista y descuento del día de la compra
     003: pedidos.stock_descontado (el stock se descuenta al confirmar un pedido)
     004: datos personales (Ley 1581)
-    005: estados de pedido pendiente / vendido / cancelado"""
+    005: estados de pedido pendiente / vendido / cancelado
+    006: administradores.protegido (cuenta de soporte que los demás no pueden tocar)"""
     asegurar_columna_descuento()
     asegurar_descuento_en_pedidos()
     asegurar_datos_personales()
@@ -206,6 +208,10 @@ def asegurar_esquema():
                  "COMMENT '1 = sus unidades ya se restaron del inventario' AFTER estado")
         app.logger.warning('Base actualizada: pedidos.stock_descontado')
     asegurar_estados_pedido()
+    if 'protegido' not in columnas_de('administradores'):
+        ejecutar("ALTER TABLE administradores ADD COLUMN protegido TINYINT(1) NOT NULL DEFAULT 0 "
+                 "COMMENT '1 = solo esta misma cuenta puede editarse' AFTER activo")
+        app.logger.warning('Base actualizada: administradores.protegido')
 
 
 def asegurar_estados_pedido():
@@ -1072,6 +1078,16 @@ def admin_administradores():
     return render_template('admin/administradores.html', administradores=administradores)
 
 
+def protegida_para_mi(admin):
+    """Una cuenta protegida (la de soporte técnico) solo la puede tocar ella misma: ningún otro
+    administrador la puede editar, cambiarle la contraseña, desactivar ni borrar. Así, si la cliente
+    olvida su contraseña, el soporte siempre puede entrar a ponerle una nueva."""
+    return bool(admin and admin.get('protegido') and admin['id'] != session['admin_id'])
+
+
+MENSAJE_PROTEGIDA = 'Esa es la cuenta de soporte técnico: está protegida y solo ella misma puede modificarse.'
+
+
 @app.route('/admin/administradores/nuevo', methods=['GET', 'POST'])
 @app.route('/admin/administradores/<int:id>/editar', methods=['GET', 'POST'])
 @login_requerido
@@ -1081,6 +1097,9 @@ def admin_administrador_form(id=None):
         admin = consultar('SELECT * FROM administradores WHERE id = %s', (id,), uno=True)
         if not admin:
             abort(404)
+        if protegida_para_mi(admin):
+            flash(MENSAJE_PROTEGIDA, 'warning')
+            return redirect(url_for('admin_administradores'))
     es_yo = id == session['admin_id']
 
     if request.method == 'POST':
@@ -1113,8 +1132,9 @@ def admin_administrador_form(id=None):
         columnas = list(datos)
         try:
             if id:
-                ejecutar(f'UPDATE administradores SET {", ".join(c + " = %s" for c in columnas)} WHERE id = %s',
-                         [datos[c] for c in columnas] + [id])
+                ejecutar(f'UPDATE administradores SET {", ".join(c + " = %s" for c in columnas)} '
+                         'WHERE id = %s AND (protegido = 0 OR id = %s)',
+                         [datos[c] for c in columnas] + [id, session['admin_id']])
             else:
                 ejecutar(f'INSERT INTO administradores ({", ".join(columnas)}) '
                          f'VALUES ({", ".join(["%s"] * len(columnas))})', [datos[c] for c in columnas])
@@ -1133,22 +1153,56 @@ def admin_administrador_form(id=None):
 @app.route('/admin/administradores/<int:id>/activo', methods=['POST'])
 @login_requerido
 def admin_administrador_activo(id):
+    admin = consultar('SELECT id, protegido FROM administradores WHERE id = %s', (id,), uno=True)
     if id == session['admin_id']:
         flash('No puedes desactivar tu propia cuenta.', 'warning')
+    elif protegida_para_mi(admin):
+        flash(MENSAJE_PROTEGIDA, 'warning')
     else:
-        ejecutar('UPDATE administradores SET activo = 1 - activo WHERE id = %s', (id,))
+        ejecutar('UPDATE administradores SET activo = 1 - activo WHERE id = %s AND protegido = 0', (id,))
     return redirect(url_for('admin_administradores'))
 
 
 @app.route('/admin/administradores/<int:id>/eliminar', methods=['POST'])
 @login_requerido
 def admin_administrador_eliminar(id):
+    admin = consultar('SELECT id, protegido FROM administradores WHERE id = %s', (id,), uno=True)
     if id == session['admin_id']:
         flash('No puedes eliminar tu propia cuenta.', 'warning')
+    elif protegida_para_mi(admin):
+        flash(MENSAJE_PROTEGIDA, 'warning')
     else:
-        ejecutar('DELETE FROM administradores WHERE id = %s', (id,))
+        ejecutar('DELETE FROM administradores WHERE id = %s AND protegido = 0', (id,))
         flash('Administrador eliminado.', 'success')
     return redirect(url_for('admin_administradores'))
+
+
+# Proteger la cuenta de soporte se hace solo desde la consola (en el computador o en el
+# servidor), nunca desde el panel, para que nadie con acceso al panel pueda quitarle la protección:
+#   flask --app app proteger-admin USUARIO
+#   flask --app app desproteger-admin USUARIO
+def marcar_protegido(usuario, valor):
+    admin = consultar('SELECT id, nombre FROM administradores WHERE usuario = %s OR email = %s',
+                      (usuario, usuario), uno=True)
+    if not admin:
+        raise click.ClickException(f'No existe un administrador con usuario o correo "{usuario}".')
+    ejecutar('UPDATE administradores SET protegido = %s, activo = IF(%s = 1, 1, activo) WHERE id = %s',
+             (valor, valor, admin['id']))
+    click.echo(f'La cuenta "{admin["nombre"]}" ({usuario}) {"quedó protegida" if valor else "ya no está protegida"}.')
+
+
+@app.cli.command('proteger-admin')
+@click.argument('usuario')
+def proteger_admin(usuario):
+    """Protege una cuenta: solo ella misma podrá modificarse."""
+    marcar_protegido(usuario, 1)
+
+
+@app.cli.command('desproteger-admin')
+@click.argument('usuario')
+def desproteger_admin(usuario):
+    """Quita la protección de una cuenta."""
+    marcar_protegido(usuario, 0)
 
 
 # =====================================================

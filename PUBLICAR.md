@@ -81,10 +81,16 @@ Si `python3.12` no existe, usa la versión más nueva que ofrezca PythonAnywhere
 
 ## 7. Primeros pasos en la tienda publicada (hacerlo de inmediato)
 
-1. Abre `https://USUARIO.pythonanywhere.com/admin/setup` y crea **tu** administrador.
-   Esta página queda abierta para cualquiera mientras no exista ninguno, por eso va primero.
-2. En **Administradores**, crea la cuenta de la cliente. Ella la cambia en *Mi cuenta* la primera vez que entre.
-3. En **Configuración**, pon el WhatsApp real, el correo, el NIT o cédula y la dirección.
+1. Abre `https://USUARIO.pythonanywhere.com/admin/setup` y crea el administrador de **soporte técnico**
+   (el de ustedes, por ejemplo usuario `soporte`). Esta página queda abierta para cualquiera mientras no
+   exista ninguno, por eso va primero. Guarden su contraseña en un gestor de contraseñas compartido.
+2. **Protege** esa cuenta, para que nadie más pueda editarla, desactivarla ni borrarla. En la consola Bash:
+   ```bash
+   cd ~/ISMAR && workon ismar && flask --app app proteger-admin soporte
+   ```
+   Si la cliente olvida su contraseña, entran con esta cuenta y en **Administradores** le ponen una nueva.
+3. En **Administradores**, crea la cuenta de la cliente. Ella la cambia en *Mi cuenta* la primera vez que entre.
+4. En **Configuración**, pon el WhatsApp real, el correo, el NIT o cédula y la dirección.
 
 ## 8. Revisar que todo funcione
 
@@ -95,6 +101,7 @@ Si `python3.12` no existe, usa la versión más nueva que ofrezca PythonAnywhere
 - [ ] Buscador, categorías, ofertas y carrito.
 - [ ] Botones *Vendido* y *Cancelar* en Pedidos.
 - [ ] `/admin/setup` ya no deja crear otro administrador.
+- [ ] En **Administradores**, la cuenta de soporte sale como "Soporte técnico · protegida".
 - [ ] La página de privacidad muestra los datos de la cliente.
 
 Si algo sale mal, la pestaña **Web** > *Log files* > **error log** dice qué pasó.
