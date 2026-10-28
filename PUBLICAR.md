@@ -6,15 +6,18 @@ de la cuenta de PythonAnywhere: la dirección de la tienda será `USUARIO.python
 Antes de empezar, ten a mano:
 
 - El **número de WhatsApp** real de la cliente y sus datos para la privacidad (correo, NIT o cédula, dirección).
-- La decisión de la cliente: **plan gratis** o **plan pago** (con o sin dominio propio).
+- La decisión de la cliente: con o sin **dominio propio**.
+
+**Se necesita el plan pago *Developer*** (10 dólares al mes, revisado en oct. 2026). Desde enero de 2026 las
+cuentas gratis nuevas de PythonAnywhere **no traen MySQL**, y la tienda lo necesita; además la página gratis se
+apaga si no se renueva cada mes. Mejor que la cuenta quede a nombre de la cliente y con su tarjeta.
 
 ---
 
 ## 1. Crear la cuenta
 
 1. Entra a https://www.pythonanywhere.com y crea la cuenta (*Pricing & signup*).
-   - Plan gratis: *Create a Beginner account*.
-   - Plan pago: elige *Developer* y paga con tarjeta.
+   Elige el plan **Developer** y paga con tarjeta (el plan gratis *Beginner* no sirve: no trae MySQL).
 2. Elige bien el **nombre de usuario**: será la dirección de la tienda (ej. `electricosismar`).
 3. Usa un correo que se revise (ahí llegan los avisos de renovación) y una contraseña fuerte.
    En *Account > Security*, activa la **verificación en dos pasos**.
@@ -116,9 +119,6 @@ Si algo sale mal, la pestaña **Web** > *Log files* > **error log** dice qué pa
 
 ## Después de publicar
 
-**Plan gratis:** cada 3 meses hay que entrar a la pestaña **Web** y presionar *Run until 3 months from today*.
-Si se olvida, la tienda se apaga hasta que alguien lo presione (antes llega un correo de aviso).
-
 **Subir cambios nuevos** (después de hacer el merge en GitHub). En la consola Bash:
 
 ```bash
@@ -139,7 +139,7 @@ bash deploy/respaldar.sh
 Deja la base de datos y las fotos subidas en la carpeta `respaldos`. Descárgalos desde la pestaña **Files** y guárdalos
 en un lugar privado: tienen datos personales de los clientes.
 
-**Dominio propio** (solo plan pago): cómpralo (por ejemplo `electricosismar.com`). En la pestaña Web, agrega una nueva
+**Dominio propio** (opcional): cómpralo (por ejemplo `electricosismar.com`). En la pestaña Web, agrega una nueva
 web app con ese dominio (`www.electricosismar.com`) y copia la misma configuración (virtualenv, static files, WSGI).
 PythonAnywhere muestra un dato CNAME (`webapp-XXXX.pythonanywhere.com`) que se pone en la página donde se compró el
 dominio. Cuando funcione, en *Security* activa el certificado HTTPS gratuito (*Let's Encrypt*).

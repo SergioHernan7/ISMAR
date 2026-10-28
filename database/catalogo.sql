@@ -210,7 +210,7 @@ INSERT INTO productos (id, categoria_id, sku, nombre, slug, descripcion, precio,
 🔧 De sobreponer: se instala sobre el techo, sin cortar el cielo raso
 🌅 Luz cálida (L/C)
 ✨ Diseño delgado y moderno
-💰 Bajo consumo de energía', 13000, 15000, 'catalogo/framel-24w-sobreponer-l-c.jpg'),
+💰 Bajo consumo de energía', 13000, 15, 'catalogo/framel-24w-sobreponer-l-c.jpg'),
 (27, 1, 'ISM-027', 'Framel LED 36W de sobreponer', 'framel-led-36w-de-sobreponer', 'Panel LED (framel) de 36W para instalar sobre el techo. Alta luminosidad para salas, cocinas, oficinas y locales.
 
 ✅ Potencia: 36W
