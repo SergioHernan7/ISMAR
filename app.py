@@ -75,7 +75,7 @@ DESCUENTO_MAXIMO = 90
 DESCUENTOS_SUGERIDOS = [5, 10, 15, 20, 25, 30, 40, 50]
 # Icono de Bootstrap Icons para cada categoría (menú de la tienda y tarjetas del inicio)
 ICONOS_CATEGORIA = {'iluminacion': 'lightbulb', 'tomas-e-interruptores': 'outlet', 'parte-electrica': 'plug',
-                    'duchas': 'droplet', 'otros': 'box-seam'}
+                    'duchas': 'droplet', 'herramientas-y-ferreteria': 'tools', 'otros': 'box-seam'}
 
 
 # =====================================================
