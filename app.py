@@ -1,10 +1,12 @@
+import hashlib
+import hmac
 import os
 import re
 import secrets
 import time
 import unicodedata
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import wraps
 from urllib.parse import quote
@@ -20,19 +22,49 @@ from werkzeug.utils import secure_filename
 from database import get_connection
 
 app = Flask(__name__)
-# En el servidor (al publicar) se definen como variables de entorno:
+# En el servidor (al publicar) se definen como variables de entorno (ver deploy/wsgi_pythonanywhere.py):
 #   SECRET_KEY    clave larga y aleatoria: python -c "import secrets; print(secrets.token_hex(32))"
-#   ISMAR_HTTPS=1 si la tienda va por https (la cookie de sesión solo viaja cifrada)
+#   ISMAR_HTTPS=1 la tienda va por https: activa el modo servidor (cookie solo cifrada, revisión de
+#                 claves, /admin/setup cerrado)
+#   ISMAR_IP_REAL  encabezado con la IP real del visitante cuando hay un proxy delante
+#                  (en PythonAnywhere: X-Real-IP). Sin él, todos parecen venir de la misma IP.
 #   DB_HOST, DB_USER, DB_PASSWORD, DB_NAME  (ver database.py)
-app.secret_key = os.environ.get('SECRET_KEY') or 'clave-de-desarrollo-cambiar-al-publicar'
-if not os.environ.get('SECRET_KEY'):
-    app.logger.warning('SECRET_KEY no está definida: se usa una clave de desarrollo. Defínela al publicar.')
+EN_SERVIDOR = os.environ.get('ISMAR_HTTPS') == '1'
+CLAVE_DESARROLLO = 'clave-de-desarrollo-cambiar-al-publicar'
+
+
+def revisar_configuracion():
+    """La sesión del panel va firmada con SECRET_KEY: quien la conozca puede fabricar una sesión de
+    administrador sin contraseña. Por eso, en el servidor, la tienda NO arranca si la clave falta,
+    es corta o es un texto de ejemplo publicado en GitHub (lo mismo con la contraseña de MySQL)."""
+    clave = os.environ.get('SECRET_KEY', '')
+    problemas = []
+    if clave.startswith('CAMBIAR') or clave == CLAVE_DESARROLLO:
+        problemas.append('SECRET_KEY tiene el texto de ejemplo: pon una clave aleatoria')
+    elif EN_SERVIDOR and len(clave) < 32:
+        problemas.append('SECRET_KEY falta o es muy corta (mínimo 32 caracteres)')
+    if os.environ.get('DB_PASSWORD', '').startswith('CAMBIAR'):
+        problemas.append('DB_PASSWORD tiene el texto de ejemplo: pon la contraseña de MySQL')
+    if problemas:
+        raise RuntimeError('Configuración insegura, la tienda no arranca: ' + '; '.join(problemas) +
+                           '. Ver PUBLICAR.md, paso 6.')
+    if not clave:
+        app.logger.warning('SECRET_KEY no está definida: se usa una clave de desarrollo. Defínela al publicar.')
+    return clave or CLAVE_DESARROLLO
+
+
+app.secret_key = revisar_configuracion()
 app.config.update(
     MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16 MB por envío
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    SESSION_COOKIE_SECURE=os.environ.get('ISMAR_HTTPS') == '1',
+    SESSION_COOKIE_SECURE=EN_SERVIDOR,
+    # La sesión del panel vence tras SESION_INACTIVA sin usarlo (se renueva con cada página)
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
 )
+SESION_MAXIMA_SEGUNDOS = 24 * 3600  # aunque se use sin parar, pide la contraseña de nuevo cada 24 h
+IMAGEN_PIXELES_MAXIMOS = 40_000_000  # una "foto" más grande que esto se rechaza (evita colgar el servidor)
+Image.MAX_IMAGE_PIXELS = IMAGEN_PIXELES_MAXIMOS
 
 EXTENSIONES_IMAGEN = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
 ESTADOS_PEDIDO = ['pendiente', 'vendido', 'cancelado']
@@ -122,10 +154,16 @@ def guardar_imagen(archivo, carpeta):
         return None
     try:
         imagen = Image.open(archivo.stream)
+        # El tamaño se lee del encabezado, antes de cargar la imagen en memoria
+        if imagen.width * imagen.height > IMAGEN_PIXELES_MAXIMOS:
+            raise Image.DecompressionBombError(f'{imagen.width}x{imagen.height}')
         imagen = ImageOps.exif_transpose(imagen)  # respeta la orientación con la que se tomó la foto
         imagen.thumbnail((IMAGEN_LADO_MAXIMO, IMAGEN_LADO_MAXIMO))
         if imagen.mode not in ('RGB', 'RGBA'):
             imagen = imagen.convert('RGBA' if 'A' in imagen.getbands() or 'transparency' in imagen.info else 'RGB')
+    except Image.DecompressionBombError:
+        flash(f'"{archivo.filename}" es demasiado grande. Usa una foto de menos de 40 megapíxeles.', 'warning')
+        return None
     except (UnidentifiedImageError, OSError):
         flash(f'"{archivo.filename}" no se pudo abrir como imagen.', 'warning')
         return None
@@ -293,19 +331,60 @@ except mysql.connector.Error as error:  # MySQL apagado: la app arranca igual
 #  Sesión y seguridad
 # =====================================================
 
+def ip_cliente():
+    """IP del visitante. Detrás de un proxy (PythonAnywhere) request.remote_addr es la del proxy,
+    la misma para todos; la real llega en el encabezado que indique ISMAR_IP_REAL (X-Real-IP)."""
+    encabezado = os.environ.get('ISMAR_IP_REAL')
+    if encabezado and request.headers.get(encabezado):
+        return request.headers[encabezado].split(',')[0].strip()
+    return request.remote_addr or ''
+
+
+def huella_clave(password_hash):
+    """Resumen de la contraseña guardado en la sesión. Si la contraseña cambia, la huella ya no
+    coincide y todas las sesiones abiertas con la anterior se cierran. Va firmada con SECRET_KEY,
+    así la cookie (que se puede leer) no revela nada del hash."""
+    return hmac.new(app.secret_key.encode(), password_hash.encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def iniciar_sesion_admin(admin):
+    session.clear()  # sesión nueva: nada de una sesión anterior se reutiliza
+    session.permanent = True  # vence tras PERMANENT_SESSION_LIFETIME sin actividad
+    session['admin_id'] = admin['id']
+    session['admin_nombre'] = admin['nombre']
+    session['admin_huella'] = huella_clave(admin['password_hash'])
+    session['admin_desde'] = int(time.time())
+
+
 def login_requerido(vista):
     @wraps(vista)
     def envoltura(*args, **kwargs):
         if 'admin_id' not in session:
             return redirect(url_for('admin_login', next=request.path))
+        admin = consultar('SELECT activo, password_hash FROM administradores WHERE id = %s',
+                          (session['admin_id'],), uno=True)
+        motivo = None
         # Si otro admin lo desactivó o lo borró, pierde el acceso aunque tenga la sesión abierta
-        if not consultar('SELECT id FROM administradores WHERE id = %s AND activo = 1',
-                         (session['admin_id'],), uno=True):
+        if not admin or not admin['activo']:
+            motivo = 'Tu cuenta de administrador está desactivada.'
+        # Si su contraseña cambió (aquí o en otro computador), las sesiones viejas se cierran
+        elif not hmac.compare_digest(session.get('admin_huella', ''), huella_clave(admin['password_hash'])):
+            motivo = 'La contraseña de tu cuenta cambió. Inicia sesión de nuevo.'
+        elif time.time() - session.get('admin_desde', 0) > SESION_MAXIMA_SEGUNDOS:
+            motivo = 'Por seguridad, vuelve a iniciar sesión.'
+        if motivo:
             session.clear()
-            flash('Tu cuenta de administrador está desactivada.', 'danger')
-            return redirect(url_for('admin_login'))
+            flash(motivo, 'warning')
+            return redirect(url_for('admin_login', next=request.path))
         return vista(*args, **kwargs)
     return envoltura
+
+
+def es_ruta_local(destino):
+    """True si es una ruta de esta misma tienda ("/carrito"), y no otra página: "//otro.com" y
+    "/\\otro.com" los navegadores los leen como otro sitio."""
+    return bool(destino) and destino.startswith('/') and not destino.startswith(('//', '/\\')) \
+        and '\\' not in destino and not any(ord(c) < 32 for c in destino)
 
 
 def pagina_anterior(por_defecto):
@@ -318,7 +397,7 @@ def pagina_anterior(por_defecto):
 def verificar_csrf():
     if request.method == 'POST':
         token = session.get('csrf_token')
-        if not token or token != request.form.get('csrf_token'):
+        if not token or not hmac.compare_digest(token, request.form.get('csrf_token') or ''):
             # Pasa si la sesión caducó (p. ej. el navegador se cerró con la pestaña abierta):
             # en vez de un error, se avisa y se vuelve a la página para intentarlo otra vez
             flash('La página estaba desactualizada. Vuelve a intentarlo.', 'warning')
@@ -350,7 +429,31 @@ def variables_panel():
 def variables_globales():
     if 'csrf_token' not in session:
         session['csrf_token'] = secrets.token_hex(16)
-    return {'csrf_token': session['csrf_token'], 'ESTADOS_PEDIDO': ESTADOS_PEDIDO}
+    return {'csrf_token': session['csrf_token'], 'ESTADOS_PEDIDO': ESTADOS_PEDIDO, 'CLAVE_MINIMA': CLAVE_MINIMA}
+
+
+CLAVE_MINIMA = 10
+CLAVES_COMUNES = {
+    '1234567890', '0123456789', '12345678910', '1234512345', '1122334455', 'qwertyuiop', 'asdfghjkl1',
+    'password12', 'password123', 'contrasena', 'contraseña', 'contrasena1', 'contraseña1', 'contrasena123',
+    'administrador', 'admin12345', 'admin123456', 'ismar12345', 'ismar123456', 'electricos', 'bogota1234',
+    'colombia12', 'colombia123', 'iloveyou12', 'abcdefghij', 'abc1234567', 'tienda1234', 'tienda12345',
+}
+
+
+def problema_con_clave(password, password2, usuario='', email='', nombre=''):
+    """Devuelve qué tiene de malo una contraseña nueva, o None si sirve."""
+    if len(password) < CLAVE_MINIMA:
+        return f'La contraseña debe tener al menos {CLAVE_MINIMA} caracteres.'
+    if password != password2:
+        return 'Las contraseñas no coinciden.'
+    baja = password.lower()
+    if baja in CLAVES_COMUNES or len(set(baja)) < 4:
+        return 'Esa contraseña es muy fácil de adivinar. Usa una frase o mezcla palabras y números.'
+    for dato in (usuario, email.split('@')[0], nombre):
+        if dato and len(dato) >= 3 and dato.lower() in baja:
+            return 'La contraseña no puede contener el usuario, el correo ni el nombre.'
+    return None
 
 
 def hay_administradores():
@@ -367,17 +470,20 @@ def admin_setup():
     """Crea el primer administrador. Solo funciona si todavía no hay ninguno."""
     if hay_administradores():
         return redirect(url_for('admin_login'))
+    # En el servidor esta página quedaría abierta a cualquiera hasta crear el primer admin:
+    # allá se crea desde la consola (flask --app app crear-admin), ver PUBLICAR.md
+    if EN_SERVIDOR:
+        return render_template('admin/setup.html', solo_consola=True)
     if request.method == 'POST':
         nombre = request.form.get('nombre', '').strip()
         usuario = request.form.get('usuario', '').strip()
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
+        problema = problema_con_clave(password, request.form.get('password2', ''), usuario, email, nombre)
         if not all([nombre, usuario, email, password]):
             flash('Completa todos los campos.', 'danger')
-        elif len(password) < 8:
-            flash('La contraseña debe tener al menos 8 caracteres.', 'danger')
-        elif password != request.form.get('password2', ''):
-            flash('Las contraseñas no coinciden.', 'danger')
+        elif problema:
+            flash(problema, 'danger')
         else:
             ejecutar('INSERT INTO administradores (nombre, usuario, email, password_hash) '
                      'VALUES (%s, %s, %s, %s)',
@@ -393,30 +499,39 @@ def login_corto():
     return redirect(url_for('admin_login'))
 
 
-# Límite de intentos de inicio de sesión: tras INTENTOS_MAXIMOS fallos seguidos desde la misma
-# dirección (o con el mismo usuario) en BLOQUEO_SEGUNDOS, se bloquea ese tiempo. Vive en la memoria
-# del servidor: se reinicia al reiniciarlo, y basta para frenar a quien prueba contraseñas.
-INTENTOS_MAXIMOS = 5
+# Límite de intentos de inicio de sesión, en BLOQUEO_SEGUNDOS:
+#  * desde una misma IP: INTENTOS_POR_IP fallos -> esa IP espera (frena a quien prueba contraseñas)
+#  * contra un mismo usuario: INTENTOS_POR_USUARIO fallos, desde cualquier IP. Es más alto a
+#    propósito: si fuera 5, cualquiera podría dejar a la cliente sin entrar escribiendo mal su usuario.
+# Vive en la memoria del servidor (se reinicia al reiniciarlo); es suficiente para una tienda pequeña.
+INTENTOS_POR_IP = 5
+INTENTOS_POR_USUARIO = 20
 BLOQUEO_SEGUNDOS = 15 * 60
 intentos_fallidos = {}
+# Para comparar contra algo cuando el usuario no existe y tardar lo mismo (no delata qué usuarios existen)
+HASH_DE_RELLENO = generate_password_hash(secrets.token_hex(16))
 
 
-def claves_de_intento(usuario):
-    return [f'ip:{request.remote_addr}', f'usuario:{usuario.lower()}']
+def contar_recientes(clave, ahora):
+    recientes = [t for t in intentos_fallidos.get(clave, []) if ahora - t < BLOQUEO_SEGUNDOS]
+    if recientes:
+        intentos_fallidos[clave] = recientes
+    else:
+        intentos_fallidos.pop(clave, None)
+    return recientes
 
 
 def minutos_de_bloqueo(usuario):
     ahora = time.time()
-    for clave in claves_de_intento(usuario):
-        recientes = [t for t in intentos_fallidos.get(clave, []) if ahora - t < BLOQUEO_SEGUNDOS]
-        intentos_fallidos[clave] = recientes
-        if len(recientes) >= INTENTOS_MAXIMOS:
+    for clave, limite in ((f'ip:{ip_cliente()}', INTENTOS_POR_IP), (f'usuario:{usuario.lower()}', INTENTOS_POR_USUARIO)):
+        recientes = contar_recientes(clave, ahora)
+        if len(recientes) >= limite:
             return int((BLOQUEO_SEGUNDOS - (ahora - recientes[0])) // 60) + 1
     return 0
 
 
 def registrar_intento(usuario, correcto):
-    for clave in claves_de_intento(usuario):
+    for clave in (f'ip:{ip_cliente()}', f'usuario:{usuario.lower()}'):
         if correcto:
             intentos_fallidos.pop(clave, None)
         else:
@@ -438,23 +553,28 @@ def admin_login():
             return render_template('admin/login.html'), 429
         admin = consultar('SELECT * FROM administradores WHERE (usuario = %s OR email = %s) AND activo = 1',
                           (usuario, usuario), uno=True)
-        correcto = bool(admin and check_password_hash(admin['password_hash'], request.form.get('password', '')))
+        correcto = check_password_hash(admin['password_hash'] if admin else HASH_DE_RELLENO,
+                                       request.form.get('password', '')) and bool(admin)
         registrar_intento(usuario, correcto)
         if correcto:
-            session.clear()
-            session['admin_id'] = admin['id']
-            session['admin_nombre'] = admin['nombre']
+            iniciar_sesion_admin(admin)
             ejecutar('UPDATE administradores SET ultimo_acceso = NOW() WHERE id = %s', (admin['id'],))
             destino = request.args.get('next', '')
-            return redirect(destino if destino.startswith('/admin') else url_for('admin_dashboard'))
+            return redirect(destino if es_ruta_local(destino) and destino.startswith('/admin/')
+                            else url_for('admin_dashboard'))
         flash('Usuario o contraseña incorrectos.', 'danger')
     return render_template('admin/login.html')
 
 
-@app.route('/admin/logout')
+@app.route('/admin/logout', methods=['GET', 'POST'])
 def admin_logout():
-    session.clear()
-    return redirect(url_for('admin_login'))
+    # Solo cierra con el botón (POST, con su clave CSRF): un enlace o una imagen en otra página
+    # no puede cerrarle la sesión a nadie
+    if request.method == 'POST':
+        session.clear()
+        flash('Cerraste sesión.', 'success')
+        return redirect(url_for('admin_login'))
+    return redirect(url_for('admin_dashboard') if 'admin_id' in session else url_for('admin_login'))
 
 
 # =====================================================
@@ -479,8 +599,10 @@ def admin_dashboard():
                            'WHERE activo = 1 AND stock <= %s ORDER BY stock LIMIT 5', (STOCK_BAJO,))
     ocultos = consultar('SELECT id, nombre FROM productos WHERE activo = 0 ORDER BY actualizado_en DESC LIMIT 5')
     total_ocultos = consultar('SELECT COUNT(*) AS n FROM productos WHERE activo = 0', uno=True)['n']
+    revisiones = [r for r in conteo_revisiones() if r[3]]
     return render_template('admin/dashboard.html', stats=stats, ultimos_pedidos=ultimos_pedidos,
-                           poco_stock=poco_stock, ocultos=ocultos, total_ocultos=total_ocultos)
+                           poco_stock=poco_stock, ocultos=ocultos, total_ocultos=total_ocultos,
+                           revisiones=revisiones)
 
 
 # =====================================================
@@ -507,7 +629,23 @@ SQL_PRODUCTOS_ADMIN = '''SELECT p.*, c.nombre AS categoria, m.nombre AS marca
              WHERE 1 = 1'''
 
 
-def filtros_admin_productos(q, categoria, solo_ocultos=False):
+# "Para revisar" (inicio del panel): productos a los que les falta algo o tienen un dato raro.
+# clave -> (texto, condición SQL sobre p = productos y c = categorías, icono)
+REVISIONES = {
+    'sin_foto': ('Sin foto', 'p.imagen_principal IS NULL', 'bi-image'),
+    'otros': ('En la categoría "Otros"', "c.slug = 'otros'", 'bi-question-circle'),
+    'stock_raro': ('Stock de 1.000 o más (¿error al escribirlo?)', 'p.stock >= 1000', 'bi-exclamation-diamond'),
+    'sin_descripcion': ('Sin descripción', "(p.descripcion IS NULL OR TRIM(p.descripcion) = '')", 'bi-card-text'),
+}
+
+
+def conteo_revisiones():
+    columnas = ', '.join(f'SUM({cond}) AS {clave}' for clave, (_, cond, _) in REVISIONES.items())
+    fila = consultar(f'SELECT {columnas} FROM productos p JOIN categorias c ON c.id = p.categoria_id', uno=True) or {}
+    return [(clave, texto, icono, int(fila.get(clave) or 0)) for clave, (texto, _, icono) in REVISIONES.items()]
+
+
+def filtros_admin_productos(q, categoria, solo_ocultos=False, revisar=None):
     """Filtros del listado de productos del panel (incluye los ocultos)."""
     filtros, params = '', []
     if q:
@@ -517,6 +655,8 @@ def filtros_admin_productos(q, categoria, solo_ocultos=False):
         params += [categoria, categoria]
     if solo_ocultos:
         filtros += ' AND p.activo = 0'
+    if revisar in REVISIONES:  # la condición sale del diccionario, nunca de lo que escriba el usuario
+        filtros += ' AND ' + REVISIONES[revisar][1]
     return filtros, params
 
 
@@ -526,11 +666,13 @@ def admin_productos():
     q = request.args.get('q', '').strip()
     categoria = request.args.get('categoria', type=int)
     solo_ocultos = request.args.get('ocultos') == '1'
-    filtros, params = filtros_admin_productos(q, categoria, solo_ocultos)
+    revisar = request.args.get('revisar') if request.args.get('revisar') in REVISIONES else None
+    filtros, params = filtros_admin_productos(q, categoria, solo_ocultos, revisar)
     productos = consultar(SQL_PRODUCTOS_ADMIN + filtros + ' ORDER BY p.creado_en DESC', params)
     categorias = consultar('SELECT id, nombre FROM categorias ORDER BY nombre')
     return render_template('admin/productos.html', productos=productos, categorias=categorias,
-                           q=q, categoria=categoria, solo_ocultos=solo_ocultos, STOCK_BAJO=STOCK_BAJO)
+                           q=q, categoria=categoria, solo_ocultos=solo_ocultos, STOCK_BAJO=STOCK_BAJO,
+                           revisar=revisar, texto_revisar=REVISIONES[revisar][0] if revisar else None)
 
 
 @app.route('/admin/productos/buscar')
@@ -719,7 +861,7 @@ def admin_producto_form(id=None):
 @login_requerido
 def admin_producto_visibilidad(id):
     ejecutar('UPDATE productos SET activo = 1 - activo WHERE id = %s', (id,))
-    return redirect(request.referrer or url_for('admin_productos'))
+    return redirect(pagina_anterior(url_for('admin_productos')))
 
 
 @app.route('/admin/productos/<int:id>/eliminar', methods=['POST'])
@@ -1111,17 +1253,18 @@ def admin_administrador_form(id=None):
         # Uno mismo no se puede desactivar: así siempre queda al menos un admin activo
         activo = 1 if f.get('activo') or es_yo else 0
 
+        # En la propia cuenta, cambiar la contraseña, el usuario o el correo (con lo que se inicia
+        # sesión) pide la contraseña actual: así nadie se adueña de una sesión que quedó abierta
+        cambia_acceso = es_yo and (password or usuario != admin['usuario'] or email != admin['email'])
         error = None
         if not all([nombre, usuario, email]):
             error = 'El nombre, el usuario y el correo son obligatorios.'
         elif not id and not password:
             error = 'Escribe una contraseña para el nuevo administrador.'
-        elif password and len(password) < 8:
-            error = 'La contraseña debe tener al menos 8 caracteres.'
-        elif password and password != f.get('password2', ''):
-            error = 'Las contraseñas no coinciden.'
-        elif es_yo and password and not check_password_hash(admin['password_hash'], f.get('password_actual', '')):
-            error = 'Tu contraseña actual no es correcta.'
+        elif password and (problema := problema_con_clave(password, f.get('password2', ''), usuario, email, nombre)):
+            error = problema
+        elif cambia_acceso and not check_password_hash(admin['password_hash'], f.get('password_actual', '')):
+            error = 'Para cambiar tu contraseña, usuario o correo, escribe bien tu contraseña actual.'
         if error:
             flash(error, 'danger')
             return render_template('admin/administrador_form.html', admin=f, editando=id, es_yo=es_yo)
@@ -1144,7 +1287,10 @@ def admin_administrador_form(id=None):
 
         if es_yo:
             session['admin_nombre'] = nombre
-        flash('Administrador guardado.', 'success')
+            if password:  # las demás sesiones de esta cuenta se cierran; esta sigue abierta
+                session['admin_huella'] = huella_clave(datos['password_hash'])
+        flash('Administrador guardado.' + (' Las sesiones abiertas con la contraseña anterior se cerraron.'
+                                           if password and id else ''), 'success')
         return redirect(url_for('admin_administradores'))
 
     return render_template('admin/administrador_form.html', admin=admin, editando=id, es_yo=es_yo)
@@ -1177,8 +1323,10 @@ def admin_administrador_eliminar(id):
     return redirect(url_for('admin_administradores'))
 
 
-# Proteger la cuenta de soporte se hace solo desde la consola (en el computador o en el
-# servidor), nunca desde el panel, para que nadie con acceso al panel pueda quitarle la protección:
+# Comandos de consola (en el computador o en el servidor). Proteger la cuenta de soporte se hace
+# solo así, nunca desde el panel, para que nadie con acceso al panel pueda quitarle la protección:
+#   flask --app app crear-admin USUARIO [--protegido]   crear un administrador (el primero, en el servidor)
+#   flask --app app cambiar-clave USUARIO               último recurso si se pierden las contraseñas
 #   flask --app app proteger-admin USUARIO
 #   flask --app app desproteger-admin USUARIO
 def marcar_protegido(usuario, valor):
@@ -1189,6 +1337,47 @@ def marcar_protegido(usuario, valor):
     ejecutar('UPDATE administradores SET protegido = %s, activo = IF(%s = 1, 1, activo) WHERE id = %s',
              (valor, valor, admin['id']))
     click.echo(f'La cuenta "{admin["nombre"]}" ({usuario}) {"quedó protegida" if valor else "ya no está protegida"}.')
+
+
+def pedir_clave_nueva(usuario, email='', nombre=''):
+    while True:
+        password = click.prompt('Contraseña nueva (no se ve al escribir)', hide_input=True)
+        password2 = click.prompt('Repítela', hide_input=True)
+        problema = problema_con_clave(password, password2, usuario, email, nombre)
+        if not problema:
+            return password
+        click.echo(problema)
+
+
+@app.cli.command('crear-admin')
+@click.argument('usuario')
+@click.option('--nombre', prompt='Nombre', help='Nombre que se muestra en el panel')
+@click.option('--email', prompt='Correo', help='Correo (también sirve para iniciar sesión)')
+@click.option('--protegido', is_flag=True, help='Protegerla de una vez (cuenta de soporte técnico)')
+def crear_admin(usuario, nombre, email, protegido):
+    """Crea un administrador (en el servidor, el primero se crea así)."""
+    password = pedir_clave_nueva(usuario, email, nombre)
+    try:
+        ejecutar('INSERT INTO administradores (nombre, usuario, email, password_hash, protegido) '
+                 'VALUES (%s, %s, %s, %s, %s)',
+                 (nombre.strip(), usuario.strip(), email.strip(), generate_password_hash(password), int(protegido)))
+    except mysql.connector.IntegrityError:
+        raise click.ClickException('Ya existe un administrador con ese usuario o correo.')
+    click.echo(f'Administrador "{usuario}" creado' + (' y protegido.' if protegido else '.'))
+
+
+@app.cli.command('cambiar-clave')
+@click.argument('usuario')
+def cambiar_clave(usuario):
+    """Último recurso: pone una contraseña nueva a cualquier cuenta, también a una protegida.
+    Cierra sus sesiones abiertas."""
+    admin = consultar('SELECT * FROM administradores WHERE usuario = %s OR email = %s', (usuario, usuario), uno=True)
+    if not admin:
+        raise click.ClickException(f'No existe un administrador con usuario o correo "{usuario}".')
+    password = pedir_clave_nueva(admin['usuario'], admin['email'], admin['nombre'])
+    ejecutar('UPDATE administradores SET password_hash = %s, activo = 1 WHERE id = %s',
+             (generate_password_hash(password), admin['id']))
+    click.echo(f'Contraseña de "{admin["usuario"]}" cambiada. Sus sesiones abiertas se cerraron.')
 
 
 @app.cli.command('proteger-admin')
@@ -1296,6 +1485,21 @@ def sin_copias_viejas(respuesta):
     y muestra el carrito real (si no, enseñaba una copia con el contador viejo)."""
     if respuesta.mimetype == 'text/html':
         respuesta.headers['Cache-Control'] = 'no-store'
+    return respuesta
+
+
+@app.after_request
+def cabeceras_de_seguridad(respuesta):
+    """Ninguna otra página puede mostrar la tienda o el panel dentro de un marco (evita que engañen
+    a la cliente para que haga clic en botones del panel sin darse cuenta), el navegador no adivina
+    tipos de archivo, y los enlaces a otros sitios no les cuentan la dirección completa."""
+    respuesta.headers.setdefault('X-Frame-Options', 'DENY')
+    respuesta.headers.setdefault('Content-Security-Policy', "frame-ancestors 'none'")
+    respuesta.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    respuesta.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    respuesta.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if EN_SERVIDOR:  # el navegador recuerda usar siempre https
+        respuesta.headers.setdefault('Strict-Transport-Security', 'max-age=15552000')
     return respuesta
 
 
@@ -1501,7 +1705,7 @@ def carrito_agregar():
         else:
             flash(f'"{producto["nombre"]}" se agregó al carrito.', 'success')
     destino = request.form.get('volver', '')
-    return volver_a(destino if destino.startswith('/') and not destino.startswith('//') else url_for('carrito'))
+    return volver_a(destino if es_ruta_local(destino) else url_for('carrito'))
 
 
 @app.route('/carrito/actualizar', methods=['POST'])
@@ -1527,6 +1731,10 @@ def carrito_quitar(producto_id):
     guardar_carrito(carrito)
     flash('Producto quitado del carrito.', 'success')
     return volver_a(url_for('carrito'))
+
+
+PEDIDOS_POR_HORA = 10  # por IP; un cliente real casi nunca pasa de uno o dos
+pedidos_por_ip = {}
 
 
 @app.route('/pedido/enviar', methods=['POST'])
@@ -1555,6 +1763,15 @@ def pedido_enviar():
     if agotados:
         flash('Ya no hay suficientes unidades de: ' + ', '.join(agotados) + '. Ajusta las cantidades.', 'danger')
         return redirect(url_for('carrito'))
+
+    # Freno a pedidos falsos en serie: cada uno llena el panel y le escribe a la cliente
+    ahora = time.time()
+    recientes = [t for t in pedidos_por_ip.get(ip_cliente(), []) if ahora - t < 3600]
+    if len(recientes) >= PEDIDOS_POR_HORA:
+        flash('Recibimos varios pedidos seguidos desde tu conexión. Si necesitas algo más, '
+              'escríbenos directamente por WhatsApp.', 'warning')
+        return redirect(url_for('carrito'))
+    pedidos_por_ip[ip_cliente()] = recientes + [ahora]
 
     con = get_connection()
     try:

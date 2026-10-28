@@ -32,18 +32,18 @@
       <div class="mb-3">
         <label class="form-label">Tu contraseña actual</label>
         <input name="password_actual" type="password" class="form-control" autocomplete="current-password">
-        <div class="form-text">Solo hace falta si vas a poner una contraseña nueva.</div>
+        <div class="form-text">Hace falta si cambias tu contraseña, tu usuario o tu correo.</div>
       </div>
       {% endif %}
       <div class="row g-3 mb-3">
         <div class="col-sm-6">
           <label class="form-label">{{ 'Nueva contraseña' if editando else 'Contraseña *' }}</label>
-          <input name="password" type="password" class="form-control" minlength="8" {{ 'required' if not editando }} autocomplete="new-password">
-          <div class="form-text">Mínimo 8 caracteres.</div>
+          <input name="password" type="password" class="form-control" minlength="{{ CLAVE_MINIMA }}" {{ 'required' if not editando }} autocomplete="new-password">
+          <div class="form-text">Mínimo {{ CLAVE_MINIMA }} caracteres. Una frase de varias palabras es fácil de recordar y difícil de adivinar.</div>
         </div>
         <div class="col-sm-6">
           <label class="form-label">Repite la contraseña</label>
-          <input name="password2" type="password" class="form-control" minlength="8" {{ 'required' if not editando }} autocomplete="new-password">
+          <input name="password2" type="password" class="form-control" minlength="{{ CLAVE_MINIMA }}" {{ 'required' if not editando }} autocomplete="new-password">
         </div>
       </div>
 

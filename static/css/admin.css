@@ -89,7 +89,7 @@ body { background: var(--fondo); }
   flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
   background: var(--acento); color: var(--oscuro); font-weight: 700;
 }
-.btn-salir { flex-shrink: 0; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; color: rgba(255, 255, 255, .6); text-decoration: none; }
+.btn-salir { border: 0; background: transparent; padding: 0; flex-shrink: 0; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; color: rgba(255, 255, 255, .6); text-decoration: none; }
 .btn-salir:hover { background: rgba(255, 255, 255, .1); color: #fff; }
 .barra-movil { display: flex; align-items: center; gap: .6rem; padding: .5rem .75rem; background: var(--oscuro); color: #fff; border-bottom: 2px solid var(--acento); }
 .min-vw-0, .min-w-0 { min-width: 0; }
