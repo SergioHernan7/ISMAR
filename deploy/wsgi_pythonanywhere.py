@@ -17,7 +17,10 @@ USUARIO = 'CAMBIAR_usuario_de_pythonanywhere'
 # Clave secreta: larga y aleatoria. Crearla en una consola con:
 #   python3 -c "import secrets; print(secrets.token_hex(32))"
 os.environ['SECRET_KEY'] = 'CAMBIAR_por_la_clave_secreta'
-os.environ['ISMAR_HTTPS'] = '1'  # la página se sirve con candado (HTTPS)
+os.environ['ISMAR_HTTPS'] = '1'  # la página se sirve con candado (HTTPS) y activa el modo servidor
+# PythonAnywhere pone la IP real del visitante en este encabezado (sin esto, todos los visitantes
+# parecen venir de la misma IP y el bloqueo por intentos fallidos los frenaría a todos juntos)
+os.environ['ISMAR_IP_REAL'] = 'X-Real-IP'
 
 # Base de datos (pestaña Databases de PythonAnywhere)
 os.environ['DB_HOST'] = f'{USUARIO}.mysql.pythonanywhere-services.com'

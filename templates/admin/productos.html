@@ -18,6 +18,7 @@
       {% endfor %}
     </select>
   </div>
+  {% if revisar %}<input type="hidden" name="revisar" value="{{ revisar }}">{% endif %}
   <div class="col-auto"><button class="btn btn-outline-secondary"><i class="bi bi-search"></i></button></div>
   <div class="col-auto d-flex align-items-center">
     <div class="form-check mb-0">
@@ -26,6 +27,13 @@
     </div>
   </div>
 </form>
+
+{% if revisar %}
+<div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+  <span><i class="bi bi-clipboard-check"></i> Mostrando solo: <strong>{{ texto_revisar }}</strong> ({{ productos|length }})</span>
+  <a href="{{ url_for('admin_productos') }}" class="btn btn-sm btn-outline-dark"><i class="bi bi-x-lg"></i> Ver todos</a>
+</div>
+{% endif %}
 
 <div class="tabla-card table-responsive">
   <table class="table table-hover align-middle">

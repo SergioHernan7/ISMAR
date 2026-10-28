@@ -77,14 +77,25 @@ Si `python3.12` no existe, usa la versión más nueva que ofrezca PythonAnywhere
    - `DB_PASSWORD`: la contraseña de MySQL del paso 2.
 
    Guarda con *Save*. Estas claves quedan solo en el servidor: **nunca** las pongas en GitHub ni las mandes por WhatsApp.
+   Si se te olvida cambiar alguno, la tienda **no arranca a propósito** y el *error log* dice cuál falta:
+   con la clave de ejemplo, cualquiera podría entrar al panel.
 7. Arriba de la pestaña Web, presiona el botón verde **Reload**.
 
 ## 7. Primeros pasos en la tienda publicada (hacerlo de inmediato)
 
-1. Abre `https://USUARIO.pythonanywhere.com/admin/setup` y crea **tu** administrador.
-   Esta página queda abierta para cualquiera mientras no exista ninguno, por eso va primero.
-2. En **Administradores**, crea la cuenta de la cliente. Ella la cambia en *Mi cuenta* la primera vez que entre.
-3. En **Configuración**, pon el WhatsApp real, el correo, el NIT o cédula y la dirección.
+1. Crea el administrador de **soporte técnico** (el de ustedes) ya **protegido**, desde la consola Bash.
+   En el servidor la página `/admin/setup` está cerrada a propósito: si no, quedaría abierta para
+   cualquiera hasta crear el primero.
+   ```bash
+   cd ~/ISMAR && workon ismar && flask --app app crear-admin soporte --protegido
+   ```
+   Te pide nombre, correo y la contraseña (mínimo 10 caracteres; no se ve al escribirla). Guárdenla en un
+   gestor de contraseñas compartido. Protegida significa que nadie más la puede editar, desactivar ni borrar:
+   si la cliente olvida su contraseña, entran con esta cuenta y en **Administradores** le ponen una nueva.
+2. Si algún día se pierden **todas** las contraseñas, en la consola Bash:
+   `cd ~/ISMAR && workon ismar && flask --app app cambiar-clave soporte`
+3. En **Administradores**, crea la cuenta de la cliente. Ella la cambia en *Mi cuenta* la primera vez que entre.
+4. En **Configuración**, pon el WhatsApp real, el correo, el NIT o cédula y la dirección.
 
 ## 8. Revisar que todo funcione
 
@@ -94,7 +105,9 @@ Si `python3.12` no existe, usa la versión más nueva que ofrezca PythonAnywhere
 - [ ] Compartir el enlace de un producto por WhatsApp: sale la vista previa con foto.
 - [ ] Buscador, categorías, ofertas y carrito.
 - [ ] Botones *Vendido* y *Cancelar* en Pedidos.
-- [ ] `/admin/setup` ya no deja crear otro administrador.
+- [ ] `/admin/setup` no deja crear administradores (dice que se usa la consola).
+- [ ] Al fallar 5 veces la contraseña, solo te bloquea a ti: desde el celular con datos (otra IP) se sigue pudiendo entrar.
+- [ ] En **Administradores**, la cuenta de soporte sale como "Soporte técnico · protegida".
 - [ ] La página de privacidad muestra los datos de la cliente.
 
 Si algo sale mal, la pestaña **Web** > *Log files* > **error log** dice qué pasó.

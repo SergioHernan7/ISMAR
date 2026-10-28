@@ -17,6 +17,7 @@ CREATE TABLE administradores (
     email           VARCHAR(120) NOT NULL UNIQUE,
     password_hash   VARCHAR(255) NOT NULL,          -- nunca guardar la contraseña en texto plano
     activo          TINYINT(1)   NOT NULL DEFAULT 1,
+    protegido       TINYINT(1)   NOT NULL DEFAULT 0,   -- cuenta de soporte: solo ella misma puede modificarse
     ultimo_acceso   DATETIME     NULL,
     creado_en       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;

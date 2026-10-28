@@ -5,6 +5,11 @@
   <div class="card shadow-sm">
     <div class="card-body p-4">
       <h1 class="h4 mb-1">Bienvenido a ISMAR</h1>
+      {% if solo_consola %}
+      <p class="text-muted mb-3">Todavía no hay administradores.</p>
+      <p class="mb-0">Por seguridad, en el servidor el primer administrador se crea desde la consola:</p>
+      <pre class="bg-light border rounded p-2 mt-2 mb-0 small"><code>flask --app app crear-admin USUARIO</code></pre>
+      {% else %}
       <p class="text-muted mb-4">Todavía no hay administradores. Crea el primero para entrar al panel.</p>
       {% include 'admin/_mensajes.html' %}
       <form method="post">
@@ -22,15 +27,16 @@
           <input name="email" type="email" class="form-control" value="{{ request.form.email }}" required>
         </div>
         <div class="mb-3">
-          <label class="form-label">Contraseña <span class="text-muted small">(mínimo 8 caracteres)</span></label>
-          <input name="password" type="password" class="form-control" minlength="8" required>
+          <label class="form-label">Contraseña <span class="text-muted small">(mínimo {{ CLAVE_MINIMA }} caracteres)</span></label>
+          <input name="password" type="password" class="form-control" minlength="{{ CLAVE_MINIMA }}" required>
         </div>
         <div class="mb-3">
           <label class="form-label">Repite la contraseña</label>
-          <input name="password2" type="password" class="form-control" minlength="8" required>
+          <input name="password2" type="password" class="form-control" minlength="{{ CLAVE_MINIMA }}" required>
         </div>
         <button class="btn btn-dark w-100">Crear administrador</button>
       </form>
+      {% endif %}
     </div>
   </div>
 </div>

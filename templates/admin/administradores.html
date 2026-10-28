@@ -5,7 +5,8 @@
   <h1 class="h3 mb-0">Administradores</h1>
   <a href="{{ url_for('admin_administrador_form') }}" class="btn btn-dark"><i class="bi bi-plus-lg"></i> Nuevo administrador</a>
 </div>
-<p class="text-muted small">Todos los administradores pueden usar el panel completo. Desactiva una cuenta para quitarle el acceso sin borrarla.</p>
+<p class="text-muted small">Todos los administradores pueden usar el panel completo. Desactiva una cuenta para quitarle el acceso sin borrarla.
+  Las cuentas marcadas como <strong>soporte técnico</strong> están protegidas: solo ellas mismas pueden modificarse.</p>
 
 <div class="tabla-card table-responsive">
   <table class="table align-middle">
@@ -13,8 +14,10 @@
     <tbody>
     {% for a in administradores %}
       {% set es_yo = a.id == session.admin_id %}
+      {% set bloqueada = a.protegido and not es_yo %}
       <tr class="{{ 'text-muted' if not a.activo }}">
-        <td class="fw-semibold">{{ a.nombre }}{% if es_yo %} <span class="badge text-bg-light border">Tú</span>{% endif %}</td>
+        <td class="fw-semibold">{{ a.nombre }}{% if es_yo %} <span class="badge text-bg-light border">Tú</span>{% endif %}
+          {% if a.protegido %}<span class="badge text-bg-warning" title="Solo esta misma cuenta puede modificarse"><i class="bi bi-shield-lock-fill"></i> Soporte técnico · protegida</span>{% endif %}</td>
         <td>{{ a.usuario }}</td>
         <td>{{ a.email }}</td>
         <td class="small">{{ a.ultimo_acceso.strftime('%d/%m/%Y %H:%M') if a.ultimo_acceso else 'Nunca' }}</td>
@@ -22,8 +25,12 @@
           {% if a.activo %}<span class="badge text-bg-success">Activo</span>{% else %}<span class="badge text-bg-secondary">Desactivado</span>{% endif %}
         </td>
         <td class="text-end text-nowrap">
+          {% if bloqueada %}
+          <span class="text-muted small" title="Solo esta misma cuenta puede modificarse"><i class="bi bi-shield-lock"></i> Protegida</span>
+          {% else %}
           <a href="{{ url_for('admin_administrador_form', id=a.id) }}" class="btn btn-sm btn-outline-primary" title="Editar"><i class="bi bi-pencil"></i></a>
-          {% if not es_yo %}
+          {% endif %}
+          {% if not es_yo and not bloqueada %}
           <form method="post" action="{{ url_for('admin_administrador_activo', id=a.id) }}" class="d-inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="btn btn-sm btn-outline-secondary" title="{{ 'Desactivar' if a.activo else 'Activar' }}">
