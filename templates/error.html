@@ -25,7 +25,7 @@
       <i class="bi bi-{{ icono }}"></i>
       <h1 class="h4 fw-bold">{{ titulo }}</h1>
       <p class="mb-3">{{ mensaje }}</p>
-      <a href="{{ url_for('inicio') }}" class="btn btn-acento">Volver al inicio</a>
+      <a href="{{ enlace or url_for('inicio') }}" class="btn btn-acento">{{ enlace_texto or 'Volver al inicio' }}</a>
     </div>
   </main>
 </body>
