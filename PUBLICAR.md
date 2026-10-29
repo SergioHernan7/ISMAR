@@ -86,7 +86,20 @@ Si `python3.12` no existe, usa la versión más nueva que ofrezca PythonAnywhere
 
 ## 7. Primeros pasos en la tienda publicada (hacerlo de inmediato)
 
-1. Crea el administrador de **soporte técnico** (el de ustedes) ya **protegido**, desde la consola Bash.
+1. Los datos de la base del archivo WSGI solo los lee la página web, **no la consola**. Para que los comandos
+   `flask --app app ...` encuentren la base, guárdalos en el entorno (una sola vez; cambia USUARIO y la contraseña
+   de MySQL del paso 2). En la consola Bash, pega todo el bloque:
+   ```bash
+   cat >> ~/.virtualenvs/ismar/bin/postactivate <<'EOF'
+   export DB_HOST=USUARIO.mysql.pythonanywhere-services.com
+   export DB_USER=USUARIO
+   export DB_NAME='USUARIO$ismar'
+   export DB_PASSWORD='CONTRASEÑA_DE_MYSQL'
+   EOF
+   workon ismar
+   ```
+   Sin esto, los comandos fallan con `Can't connect to MySQL server on 'localhost'`.
+2. Crea el administrador de **soporte técnico** (el de ustedes) ya **protegido**, desde la consola Bash.
    En el servidor la página `/admin/setup` está cerrada a propósito: si no, quedaría abierta para
    cualquiera hasta crear el primero.
    ```bash
@@ -95,10 +108,10 @@ Si `python3.12` no existe, usa la versión más nueva que ofrezca PythonAnywhere
    Te pide nombre, correo y la contraseña (mínimo 10 caracteres; no se ve al escribirla). Guárdenla en un
    gestor de contraseñas compartido. Protegida significa que nadie más la puede editar, desactivar ni borrar:
    si la cliente olvida su contraseña, entran con esta cuenta y en **Administradores** le ponen una nueva.
-2. Si algún día se pierden **todas** las contraseñas, en la consola Bash:
+3. Si algún día se pierden **todas** las contraseñas, en la consola Bash:
    `cd ~/ISMAR && workon ismar && flask --app app cambiar-clave soporte`
-3. En **Administradores**, crea la cuenta de la cliente. Ella la cambia en *Mi cuenta* la primera vez que entre.
-4. En **Configuración**, pon el WhatsApp real, el correo, el NIT o cédula y la dirección.
+4. Crea la cuenta de la cliente (en **Administradores** o con `flask --app app crear-admin USUARIO`). Ella la cambia en *Mi cuenta* la primera vez que entre.
+5. En **Configuración**, pon el WhatsApp real, el correo, el NIT o cédula y la dirección.
 
 ## 8. Revisar que todo funcione
 

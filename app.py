@@ -1849,7 +1849,12 @@ def pedido_gracias(codigo):
 @app.errorhandler(404)
 def no_encontrado(e):
     if request.path.startswith('/admin'):
-        return e
+        if 'admin_id' not in session:
+            return e
+        # P. ej. al volver con "atrás" a un pedido o producto que se acaba de eliminar
+        return render_template('error.html', titulo='Esta página ya no existe', icono='search',
+                               mensaje='Puede que se haya eliminado (por ejemplo, un pedido o un producto).',
+                               enlace=url_for('admin_dashboard'), enlace_texto='Volver al panel'), 404
     return render_template('tienda/404.html'), 404
 
 
